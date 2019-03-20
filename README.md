@@ -11,4 +11,4 @@ A tensorflow implementation of a variational autoencoder.
 Run the enclosed `vae_mnist.ipynb` notebook in a tensorflow environment.
 
 ## Tensorflow graph:
-![The entire graph](variational-autoencoder/other/images/tensorflow_graph.png?raw=true "tensorflow_graph.png")
+![The entire graph](variational-autoencoder/blob/master/encoder.png?raw=true "encoder")
