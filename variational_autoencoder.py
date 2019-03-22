@@ -107,7 +107,7 @@ class VariationalAutoencoder(object):
         # Fill the graph:
         with self.graph.as_default():
         
-            # Input placeholder:
+            # Inputs placeholder:
             inputs = tf.placeholder(name = 'inputs',
                                     dtype = tf.float64, 
                                     shape = [None] + self.inputs_shape_list)
@@ -181,6 +181,7 @@ class VariationalAutoencoder(object):
         # Run the variable initializer:
         self.sess.run(self.init)
 
+        # Try to load a previously trained model for either inference or future training:
         checkpoint_file_name = os.path.join(self.model_path, 'checkpoint')
         if os.path.exists(checkpoint_file_name):
             try:
@@ -699,10 +700,10 @@ class VariationalAutoencoder(object):
             epoch_start = time.time()
 
             avg_loss = 0.
-            total_batch = int(num_samples / batch_size)
+            num_batches_per_epoch = int(num_samples / batch_size)
             
             # Loop over all batches
-            for i in range(total_batch):
+            for i in range(num_batches_per_epoch):
 
                 # Get the data batch:
                 data_batch = input_data[i * batch_size: (i + 1) * batch_size]

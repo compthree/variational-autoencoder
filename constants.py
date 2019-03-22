@@ -1,5 +1,4 @@
 import os
-import datetime
 
 # File names:
 MODEL_DETAILS = 'model_details.json'
