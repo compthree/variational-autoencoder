@@ -75,12 +75,6 @@ class VariationalAutoencoder(object):
             assert key in model_details_dict
             assert isinstance(model_details_dict[key], str)
 
-        # Include any of these missing key, value pairs in 'model_details_dict':
-        if 'learning_rate' not in model_details_dict:
-            model_details_dict['learning_rate'] = 0.001
-        if 'num_trained_epochs' not in model_details_dict:
-            model_details_dict['num_trained_epochs'] = 0
-
         # Set the inputs to class attributes:
         for key in model_details_dict:
             object.__setattr__(self, key, model_details_dict[key])
@@ -98,7 +92,15 @@ class VariationalAutoencoder(object):
         # Otherwise, make a new directory to store the model details and dump them there:
         else:
             self.make_model_path()
-            self.save_model_details()
+
+        # Include any of these potentially missing class attributes:
+        if not hasattr(self, 'learning_rate'):
+            object.__setattr__(self, 'learning_rate', 0.01)
+        if not hasattr(self, 'num_trained_epochs'):
+            object.__setattr__(self, 'num_trained_epochs', 0)
+
+        # Save the model details:
+        self.save_model_details()
         
         # Initialize a new empty graph:
         tf.reset_default_graph()
@@ -1046,8 +1048,6 @@ class VariationalAutoencoder(object):
                     continue
 
                 if self.model_details_dict[key] != loaded_model_details_dict[key]:
-                    # print(self.model_details_dict[key])
-                    # print(loaded_model_details_dict[key])
                     exception = 'The "input model details dict" does not equal ' \
                     + 'the "loaded model details dict" at the key "{}": '.format(key) \
                     + '{} != {}. '.format(self.model_details_dict[key],
