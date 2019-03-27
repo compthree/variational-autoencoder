@@ -95,7 +95,7 @@ class VariationalAutoencoder(object):
 
         # Include any of these potentially missing class attributes:
         if not hasattr(self, 'learning_rate'):
-            object.__setattr__(self, 'learning_rate', 0.01)
+            object.__setattr__(self, 'learning_rate', 0.001)
         if not hasattr(self, 'num_trained_epochs'):
             object.__setattr__(self, 'num_trained_epochs', 0)
 
