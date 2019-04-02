@@ -47,11 +47,15 @@ LIST_ATTRIBUTES = ['graph',
                    'timestamp',
                    'avg_loss',
                    'saved_model_path',
-                   'builder']
+                   'builder',
+                   'is_training',
+                   'use_batch_normalization',
+                   'averaging_axes_length']
 LIST_MODEL_DETAIL_KEYS = ['encoder_list',
                           'decoder_list',
                           'inputs_shape_list',
                           'learning_rate',
                           'project_name',
                           'model_name',
-                          'num_trained_epochs']
+                          'num_trained_epochs',
+                          'use_batch_normalization']
