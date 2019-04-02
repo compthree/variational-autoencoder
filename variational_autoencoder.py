@@ -231,7 +231,7 @@ class VariationalAutoencoder(object):
         object.__setattr__(self, 'latent_stdvs', latent_stdvs)
         
         # Set the layer shapes of the encoder subgraph as class attributes:
-        object.__setattr__(self, 'encoder_shape_list', self.layer_shape_list[1:])
+        object.__setattr__(self, 'encoder_shape_list', self.layer_shape_list)
         object.__setattr__(self, 'latent_shape',       self.layer_shape_list[-1])
         
         # Create the latent variable sampler subgraph:
@@ -262,8 +262,8 @@ class VariationalAutoencoder(object):
         object.__setattr__(self, 'output_lstd2', output_lstd2)
         object.__setattr__(self, 'output_stdvs', output_stdvs)
         
-        # Set the layer shapes of the encoder subgraph as class attributes:
-        object.__setattr__(self, 'decoder_shape_list', self.layer_shape_list[len(self.encoder_shape_list) + 1:])
+        # Set the layer shapes of the decoder subgraph as class attributes:
+        object.__setattr__(self, 'decoder_shape_list', self.layer_shape_list[len(self.encoder_shape_list) - 1:])
         object.__setattr__(self, 'output_shape',       self.layer_shape_list[-1])
 
         # Create the output variable sampler subgraph:
@@ -424,12 +424,15 @@ class VariationalAutoencoder(object):
             
         return output
     
-    def _create_convolu_layer(self, inputs, layer_dict, tag):
+    def _create_convolu_layer(self,
+                              inputs,
+                              layer_dict,
+                              tag):
 
         '''
 
         Description: Creates a single convolution layer:
-            1. "transpose" convolution
+            1. convolution
             2. add biases
             3. activation
             4. max-pool
@@ -467,8 +470,10 @@ class VariationalAutoencoder(object):
                                    kernel,
                                    padding = 'SAME',
                                    name = 'convolve___' + tag)
-        output = tf.add(output,  biases, name = 'biases_add_' + tag)
-        output = activation(output,      name = 'activation_' + tag)
+        output = tf.add(output, biases, name = 'biases_add_' + tag)
+
+        # Activation and max-pooling:
+        output = activation(output, name = 'activation_' + tag)
         output = tf.nn.pool(output,
                             window_shape = layer_dict['pool_shape'],
                             pooling_type = 'MAX',
@@ -582,6 +587,13 @@ class VariationalAutoencoder(object):
         Output:
 
         '''
+
+        # TO DO: in its current implementation, the first dimension could change, which
+        # we cannot allow. Freeze this dimension in the future by not using [-1].
+
+        # TO DO: for the case where the reshape is to flatten together all but the first
+        # channel, don't require that we know the shape beforehand. (layer_dict['output_shape']
+        # can be empty fo this).
         
         output = tf.reshape(inputs, [-1] + layer_dict['output_shape'], name = 'reshape_' + tag)
         
