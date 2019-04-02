@@ -472,6 +472,11 @@ class VariationalAutoencoder(object):
                                    name = 'convolve___' + tag)
         output = tf.add(output, biases, name = 'biases_add_' + tag)
 
+        # Perform batch-normalization:
+        if self.batch_normalization:
+            with tf.variable_scope('batch_normalization', reuse = tf.AUTO_REUSE):
+                output = self._perform_batch_normalization(output, is_training)
+
         # Activation and max-pooling:
         output = activation(output, name = 'activation_' + tag)
         output = tf.nn.pool(output,
@@ -537,6 +542,12 @@ class VariationalAutoencoder(object):
                                          padding = 'SAME',
                                          name = 'deconvolve_' + tag)
         output = tf.add(output, biases,  name = 'biases_add_' + tag)
+
+       # Perform batch-normalization:
+        if self.batch_normalization:
+            with tf.variable_scope('batch_normalization', reuse = tf.AUTO_REUSE):
+                output = self._perform_batch_normalization(output, is_training)
+
         output = activation(output,      name = 'activation_' + tag)
         
         return output
@@ -625,7 +636,55 @@ class VariationalAutoencoder(object):
         
         else:
             raise Exception('Activation must be one of "relu", "sigmoid", or "identity".')
-            
+
+    def _perform_batch_normalization(self, inputs, is_training, decay = 0.999)::
+
+        '''Adopted from https://r2rt.com/implementing-batch-normalization-in-tensorflow.html'''
+
+        epsilon = 1e-3
+
+        # Get or initialize the shift and scale variables:
+        scale = tf.get_variable(name = 'scale',
+                                dtype = tf.float64,
+                                shape = inputs.get_shape()[1:],
+                                initializer = tf.initializers.ones)
+        shift = tf.get_variable(name = 'shift',
+                                dtype = tf.float64,
+                                shape = inputs.get_shape()[1:],
+                                initializer = tf.initializers.zeros)
+
+        # Get or initialize the population mean and variance variables:
+        pop_mean = tf.get_variable(name = 'population_mean',
+                                   dtype = tf.float64,
+                                   shape = inputs.get_shape()[1:],
+                                   initializer = tf.initializers.zeros,
+                                   trainable = False)
+        pop_std2 = tf.get_variable(name = 'population_std2',
+                                   dtype = tf.float64,
+                                   shape = inputs.get_shape()[1:],
+                                   initializer = tf.initializers.ones,
+                                   trainable = False)
+
+        if is_training:
+            batch_mean, batch_std2 = tf.nn.moments(inputs, axes = [0], keep_dims = True)
+            train_mean = tf.assign(pop_mean,
+                                   pop_mean * decay + batch_mean * (1 - decay))
+            train_std2 = tf.assign(pop_std2,
+                                   pop_std2 * decay + batch_std2 * (1 - decay))
+            with tf.control_dependencies([train_mean, train_std2]):
+                return tf.nn.batch_normalization(inputs,
+                                                 batch_mean,
+                                                 batch_std2,
+                                                 shift,
+                                                 scale,
+                                                 epsilon)
+        else:
+            return tf.nn.batch_normalization(inputs,
+                                             pop_mean,
+                                             pop_std2,
+                                             shift,
+                                             scale,
+                                             epsilon)
 
     def _compute_losses(self):
 
