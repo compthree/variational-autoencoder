@@ -775,7 +775,7 @@ class VariationalAutoencoder(object):
         if latent_sample is None:
             latent_sample = np.random.normal(size = [1, self.latent_shape])
             
-        return self._get_tensor_value(self.latent_sample, self.output_means, latent_sampe)
+        return self._get_tensor_value(self.latent_sample, self.output_means, latent_sample)
     
     def reform(self, input_data):
 
