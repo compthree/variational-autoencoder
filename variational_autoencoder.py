@@ -712,20 +712,32 @@ class VariationalAutoencoder(object):
 
         # The 'decay' factor must be one during inference so we do not change the estimates
         # of the population mean and std2 for use in the batch normalization sub-layer:
-        decay = tf.cond(self.is_training, lambda: train_decay, lambda: 1.0)
-        decay = tf.cast(decay, tf.float64)
+        with tf.variable_scope('set_decay_weight', reuse = tf.AUTO_REUSE):
+            decay = tf.cond(self.is_training,
+                            lambda: train_decay, # Return if training.
+                            lambda: 1.0,         # Return if not training.
+                            name = 'train_condition')
+            decay = tf.cast(decay, tf.float64)
 
         # Tensors 'train_mean' and 'train_std2' are not part of the dataflow for training.
         # Their only purpose is to update the population mean and std2 estimates:
-        train_mean = tf.assign(pop_mean, pop_mean * decay + batch_mean * (1 - decay))
-        train_std2 = tf.assign(pop_std2, pop_std2 * decay + batch_std2 * (1 - decay))
+        with tf.variable_scope('update_population_stats', reuse = tf.AUTO_REUSE):
+            with tf.variable_scope('update_population_mean', reuse = tf.AUTO_REUSE):
+                weighted_pop_mean   = tf.multiply(pop_mean,   decay,     name = 'weighted_pop_mean')
+                weighted_batch_mean = tf.multiply(batch_mean, 1 - decay, name = 'weighted_batch_mean')
+                train_mean = tf.assign(pop_mean, weighted_pop_mean + weighted_batch_mean)
+            with tf.variable_scope('update_population_std2', reuse = tf.AUTO_REUSE):
+                weighted_pop_std2   = tf.multiply(pop_std2,   decay,     name = 'weighted_pop_std2')
+                weighted_batch_std2 = tf.multiply(batch_std2, 1 - decay, name = 'weighted_batch_std2')
+                train_std2 = tf.assign(pop_std2, weighted_pop_std2 + weighted_batch_std2)
 
         # Because they're not part of the dataflow for training, 'train_mean' and 'train_std2'
         # are not updated unless we force updates using the 'tf.control_dependencies' context:
         with tf.control_dependencies([train_mean, train_std2]):
             use_mean, use_std2 = tf.cond(self.is_training,
                                          lambda: (batch_mean, batch_std2), # Return if training.
-                                         lambda: (pop_mean,   pop_std2))   # Return if not training.
+                                         lambda: (pop_mean,   pop_std2),   # Return if not training.
+                                         name = 'set_batch_norm_mean_std2')
 
         # Finally compute the outputs of the batch-normalization sub-layer:
         return tf.nn.batch_normalization(inputs,
