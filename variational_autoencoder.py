@@ -98,6 +98,10 @@ class VariationalAutoencoder(object):
             object.__setattr__(self, 'learning_rate', 0.001)
         if not hasattr(self, 'num_trained_epochs'):
             object.__setattr__(self, 'num_trained_epochs', 0)
+        if not hasattr(self, 'use_batch_normalization'):
+            object.__setattr__(self, 'use_batch_normalization', False)
+        if self.use_batch_normalization and not hasattr(self, 'averaging_axes_length'):
+            object.__setattr__(self, 'averaging_axes_length', 'long')
 
         # Save the model details:
         self.save_model_details()
@@ -111,9 +115,15 @@ class VariationalAutoencoder(object):
         
             # Inputs placeholder:
             inputs = tf.placeholder(name = 'inputs',
-                                    dtype = tf.float64, 
+                                    dtype = tf.float64,
                                     shape = [None] + self.inputs_shape_list)
             object.__setattr__(self, 'inputs', inputs)
+
+            # Training flag:
+            is_training = tf.placeholder_with_default(False,
+                                                      name = 'training_flag',
+                                                      shape = [])
+            object.__setattr__(self, 'is_training', is_training)
             
             # Create the variational autoencoder:
             with tf.variable_scope('variational_autoencoder', reuse = tf.AUTO_REUSE):
@@ -170,6 +180,12 @@ class VariationalAutoencoder(object):
 
         if hasattr(self, 'num_trained_epochs'):
             model_details_dict['num_trained_epochs'] = self.num_trained_epochs
+
+        if hasattr(self, 'use_batch_normalization'):
+            model_details_dict['use_batch_normalization'] = self.use_batch_normalization
+
+        if hasattr(self, 'averaging_axes_length'):
+            model_details_dict['averaging_axes_length'] = self.averaging_axes_length
 
         return model_details_dict
 
@@ -334,7 +350,7 @@ class VariationalAutoencoder(object):
                 # Compute the i:th layer output:
                 output_means = self._create_layer(output_means, layer_dict, tag = str(i + 1) + '_means')
                 output_lstd2 = self._create_layer(output_lstd2, layer_dict, tag = str(i + 1) + '_lstd2')
-                output_stdvs = self._create_layer(output_stdvs, layer_dict, tag = str(i + 1) + '_lstd2')
+                output_stdvs = self._create_layer(output_stdvs, layer_dict, tag = str(i + 1) + '_stdvs')
                 
             # Set the i:th layer shape to a class attribute:
             if i >= j:
@@ -420,7 +436,15 @@ class VariationalAutoencoder(object):
         # Layer operations:
         output = tf.matmul(inputs, weight, name = 'weight_mul_' + tag)
         output = tf.add(output, biases,    name = 'biases_add_' + tag)
-        output = activation(output,        name = 'activation_' + tag)
+
+        # Perform batch-normalization:
+        if self.use_batch_normalization:
+            with tf.variable_scope('batch_normalization', reuse = tf.AUTO_REUSE):
+                output = self._perform_batch_normalization(output,
+                                                           averaging_axes_length = self.averaging_axes_length)
+
+        # Activation:
+        output = activation(output, name = 'activation_' + tag)
             
         return output
     
@@ -471,6 +495,12 @@ class VariationalAutoencoder(object):
                                    padding = 'SAME',
                                    name = 'convolve___' + tag)
         output = tf.add(output, biases, name = 'biases_add_' + tag)
+
+        # Perform batch-normalization:
+        if self.use_batch_normalization:
+            with tf.variable_scope('batch_normalization', reuse = tf.AUTO_REUSE):
+                output = self._perform_batch_normalization(output,
+                                                           averaging_axes_length = self.averaging_axes_length)
 
         # Activation and max-pooling:
         output = activation(output, name = 'activation_' + tag)
@@ -537,7 +567,15 @@ class VariationalAutoencoder(object):
                                          padding = 'SAME',
                                          name = 'deconvolve_' + tag)
         output = tf.add(output, biases,  name = 'biases_add_' + tag)
-        output = activation(output,      name = 'activation_' + tag)
+
+       # Perform batch-normalization:
+        if self.use_batch_normalization:
+            with tf.variable_scope('batch_normalization', reuse = tf.AUTO_REUSE):
+                output = self._perform_batch_normalization(output,
+                                                           averaging_axes_length = self.averaging_axes_length)
+
+        # Activation:
+        output = activation(output, name = 'activation_' + tag)
         
         return output
     
@@ -625,7 +663,89 @@ class VariationalAutoencoder(object):
         
         else:
             raise Exception('Activation must be one of "relu", "sigmoid", or "identity".')
-            
+
+    def _perform_batch_normalization(self,
+                                     inputs,
+                                     train_decay = 0.99,
+                                     averaging_axes_length = 'long'):
+
+        '''Adopted from https://r2rt.com/implementing-batch-normalization-in-tensorflow.html'''
+
+        # Prevent overflow from dividing by a batch variance of zero:
+        epsilon = 1e-3
+
+        # Two possible ways to average over datapoint features in a batch:
+        if averaging_axes_length == 'long':
+            # Average over all but the last 'channel' dimension of 'inputs':
+            cutoff = len(inputs.get_shape().as_list()) - 1
+        else:
+            assert averaging_axes_length == 'short'
+            # Average over only the 'batch' dimension of 'inputs':
+            cutoff = 1
+
+        # Get or initialize the shift and scale variables for batch normalization:
+        scale = tf.get_variable(name = 'scale',
+                                dtype = tf.float64,
+                                shape = inputs.get_shape()[cutoff:],
+                                initializer = tf.initializers.ones)
+        shift = tf.get_variable(name = 'shift',
+                                dtype = tf.float64,
+                                shape = inputs.get_shape()[cutoff:],
+                                initializer = tf.initializers.zeros)
+
+        # Get or initialize the population mean and variance variables:
+        # (Note: with 'trainable = False', these variables are not part
+        # of the dataflow for training.)
+        pop_mean = tf.get_variable(name = 'population_mean',
+                                   dtype = tf.float64,
+                                   shape = inputs.get_shape()[cutoff:],
+                                   initializer = tf.initializers.zeros,
+                                   trainable = False)
+        pop_std2 = tf.get_variable(name = 'population_std2',
+                                   dtype = tf.float64,
+                                   shape = inputs.get_shape()[cutoff:],
+                                   initializer = tf.initializers.ones,
+                                   trainable = False)
+
+        # Get the mean and variance of all datapoints in this batch:
+        batch_mean, batch_std2 = tf.nn.moments(inputs, axes = list(range(cutoff)))
+
+        # The 'decay' factor must be one during inference so we do not change the estimates
+        # of the population mean and std2 for use in the batch normalization sub-layer:
+        with tf.variable_scope('set_decay_weight', reuse = tf.AUTO_REUSE):
+            decay = tf.cond(self.is_training,
+                            lambda: train_decay, # Return if training.
+                            lambda: 1.0,         # Return if not training.
+                            name = 'train_condition')
+            decay = tf.cast(decay, tf.float64)
+
+        # Tensors 'train_mean' and 'train_std2' are not part of the dataflow for training.
+        # Their only purpose is to update the population mean and std2 estimates:
+        with tf.variable_scope('update_population_stats', reuse = tf.AUTO_REUSE):
+            with tf.variable_scope('update_population_mean', reuse = tf.AUTO_REUSE):
+                weighted_pop_mean   = tf.multiply(pop_mean,   decay,     name = 'weighted_pop_mean')
+                weighted_batch_mean = tf.multiply(batch_mean, 1 - decay, name = 'weighted_batch_mean')
+                train_mean = tf.assign(pop_mean, weighted_pop_mean + weighted_batch_mean)
+            with tf.variable_scope('update_population_std2', reuse = tf.AUTO_REUSE):
+                weighted_pop_std2   = tf.multiply(pop_std2,   decay,     name = 'weighted_pop_std2')
+                weighted_batch_std2 = tf.multiply(batch_std2, 1 - decay, name = 'weighted_batch_std2')
+                train_std2 = tf.assign(pop_std2, weighted_pop_std2 + weighted_batch_std2)
+
+        # Because they're not part of the dataflow for training, 'train_mean' and 'train_std2'
+        # are not updated unless we force updates using the 'tf.control_dependencies' context:
+        with tf.control_dependencies([train_mean, train_std2]):
+            use_mean, use_std2 = tf.cond(self.is_training,
+                                         lambda: (batch_mean, batch_std2), # Return if training.
+                                         lambda: (pop_mean,   pop_std2),   # Return if not training.
+                                         name = 'set_batch_norm_mean_std2')
+
+        # Finally compute the outputs of the batch-normalization sub-layer:
+        return tf.nn.batch_normalization(inputs,
+                                         use_mean,
+                                         use_std2,
+                                         shift,
+                                         scale,
+                                         epsilon)
 
     def _compute_losses(self):
 
@@ -659,7 +779,7 @@ class VariationalAutoencoder(object):
         # Set the loss as a class attribute:
         object.__setattr__(self, 'loss', average_loss)
 
-    def _get_tensor_value(self, inputs_tensor, output_tensor, input_data):
+    def _get_tensor_value(self, output_tensor, feed_dict):
 
         '''
         
@@ -671,7 +791,7 @@ class VariationalAutoencoder(object):
 
         '''
         
-        return self.sess.run(output_tensor, feed_dict = {inputs_tensor: input_data})
+        return self.sess.run(output_tensor, feed_dict = feed_dict)
     
     def update_network(self, input_data):
 
@@ -685,7 +805,8 @@ class VariationalAutoencoder(object):
 
         '''
         
-        _, loss = self._get_tensor_value(self.inputs, (self.optimizer, self.loss), input_data)
+        feed_dict = {self.inputs: input_data, self.is_training: True}
+        _, loss = self._get_tensor_value((self.optimizer, self.loss), feed_dict)
         
         return loss
     
@@ -744,6 +865,7 @@ class VariationalAutoencoder(object):
                 print('Loss over all input data:', round(self.avg_loss, 3))
                 print('Time to train last epoch:', round(time.time() - epoch_start, 3))
 
+                # Save the model weights:
                 self.save_model()
     
     def encode(self, input_data):
@@ -758,7 +880,8 @@ class VariationalAutoencoder(object):
 
         '''
         
-        return self._get_tensor_value(self.inputs, self.latent_means, input_data)
+        feed_dict = {self.inputs: input_data}
+        return self._get_tensor_value(self.latent_means, feed_dict)
         
     def decode(self, latent_sample = None):
 
@@ -774,8 +897,9 @@ class VariationalAutoencoder(object):
         
         if latent_sample is None:
             latent_sample = np.random.normal(size = [1, self.latent_shape])
-            
-        return self._get_tensor_value(self.latent_sample, self.output_means, latent_sample)
+
+        feed_dict = {self.latent_sample: latent_sample}
+        return self._get_tensor_value(self.output_means, feed_dict)
     
     def reform(self, input_data):
 
@@ -788,8 +912,8 @@ class VariationalAutoencoder(object):
         Output:
 
         '''
-        
-        return self._get_tensor_value(self.inputs, self.output_sample, input_data)
+        feed_dict = {self.inputs: input_data}
+        return self._get_tensor_value(self.output_sample, feed_dict)
     
     def restore_model(self):
 
@@ -821,7 +945,8 @@ class VariationalAutoencoder(object):
 
         '''
         
-        return self._get_tensor_value(self.inputs, self.inputs_shape, input_data)
+        feed_dict = {self.inputs: input_data}
+        return self._get_tensor_value(self.inputs_shape, feed_dict)
     
     def get_latent_shape(self, input_data):
 
@@ -835,7 +960,8 @@ class VariationalAutoencoder(object):
 
         '''
         
-        return self._get_tensor_value(self.inputs, self.latent_shape, input_data)
+        feed_dict = {self.inputs: input_data}
+        return self._get_tensor_value(self.latent_shape, feed_dict)
     
     def get_output_shape(self, input_data):
 
@@ -849,7 +975,8 @@ class VariationalAutoencoder(object):
 
         '''
         
-        return self._get_tensor_value(self.inputs, self.output_shape, input_data)
+        feed_dict = {self.inputs: input_data}
+        return self._get_tensor_value(self.output_shape, feed_dict)
     
     def get_layer_shape_list(self, input_data):
 
@@ -863,7 +990,8 @@ class VariationalAutoencoder(object):
 
         '''
         
-        return self._get_tensor_value(self.inputs, self.layer_shape_list, input_data)
+        feed_dict = {self.inputs: input_data}
+        return self._get_tensor_value(self.layer_shape_list, feed_dict)
 
     def get_encoder_shape_list(self, input_data):
 
@@ -877,7 +1005,8 @@ class VariationalAutoencoder(object):
 
         '''
         
-        return self._get_tensor_value(self.inputs, self.encoder_shape_list, input_data)
+        feed_dict = {self.inputs: input_data}
+        return self._get_tensor_value(self.encoder_shape_list, feed_dict)
         
     def get_decoder_shape_list(self, input_data):
 
@@ -891,7 +1020,8 @@ class VariationalAutoencoder(object):
 
         '''
         
-        return self._get_tensor_value(self.inputs, self.decoder_shape_list, input_data)
+        feed_dict = {self.inputs: input_data}
+        return self._get_tensor_value(self.decoder_shape_list, feed_dict)
 
     def set_project_path(self):
 
@@ -1026,7 +1156,13 @@ class VariationalAutoencoder(object):
 
         '''
 
-        assert set(self.model_details_dict.keys()) == set(const.LIST_MODEL_DETAIL_KEYS)
+        model_details_dict = dict(self.model_details_dict)
+
+        assert 'use_batch_normalization' in model_details_dict
+        if model_details_dict['use_batch_normalization']:
+            assert 'averaging_axes_length' in model_details_dict
+            model_details_dict.pop('averaging_axes_length')
+        assert set(model_details_dict) == set(const.LIST_MODEL_DETAIL_KEYS)
 
         # TO DO: check that the value for each key of 'model_details_dict'
         # is the correct datetype and has the correct format.
