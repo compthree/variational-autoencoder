@@ -127,8 +127,12 @@ class VariationalAutoencoder(object):
             
             # Create the variational autoencoder:
             with tf.variable_scope('variational_autoencoder', reuse = tf.AUTO_REUSE):
-                object.__setattr__(self, 'inputs_shape', tf.shape(inputs, name = 'inputs_shape'))
-                object.__setattr__(self, 'layer_shape_list', [self.inputs_shape])
+
+                # Initialize the layer shapes (tensors) class attribute:
+                object.__setattr__(self, '_inputs_shape', tf.shape(inputs, name = '_inputs_shape'))
+                object.__setattr__(self, '_layer_shape_list', [self._inputs_shape])
+
+                # Create the neural network and capture the output:
                 self._create_network()
             output_sample = tf.identity(self.output_sample, name = 'output_sample')
 
@@ -195,9 +199,19 @@ class VariationalAutoencoder(object):
         # Launch the session:
         sess = tf.Session(graph = self.graph)
         object.__setattr__(self, 'sess', sess)
-        
+
         # Run the variable initializer:
         self.sess.run(self.init)
+
+        # Set the input, latent, and output shapes (numbers) as class attributes:
+        object.__setattr__(self, 'inputs_shape', self.get_inputs_shape())
+        object.__setattr__(self, 'latent_shape', self.get_latent_shape())
+        object.__setattr__(self, 'output_shape', self.get_output_shape())
+
+        # Set the layer shapes (numbers), without the batch dimension, as class attributes:
+        object.__setattr__(self, 'layer_shape_list',   self.get_layer_shape_list())
+        object.__setattr__(self, 'encoder_shape_list', self.get_encoder_shape_list())
+        object.__setattr__(self, 'decoder_shape_list', self.get_decoder_shape_list())
 
         # Try to load a previously trained model for either inference or future training:
         checkpoint_file_name = os.path.join(self.model_path, 'checkpoint')
@@ -246,9 +260,9 @@ class VariationalAutoencoder(object):
         object.__setattr__(self, 'latent_lstd2', latent_lstd2)
         object.__setattr__(self, 'latent_stdvs', latent_stdvs)
         
-        # Set the layer shapes of the encoder subgraph as class attributes:
-        object.__setattr__(self, 'encoder_shape_list', self.layer_shape_list)
-        object.__setattr__(self, 'latent_shape',       self.layer_shape_list[-1])
+        # Set the layer shapes (tensors) of the encoder subgraph as class attributes:
+        object.__setattr__(self, '_encoder_shape_list', self._layer_shape_list)
+        object.__setattr__(self, '_latent_shape',       self._layer_shape_list[-1])
         
         # Create the latent variable sampler subgraph:
         with tf.variable_scope('latent_sample', reuse = tf.AUTO_REUSE):
@@ -279,8 +293,8 @@ class VariationalAutoencoder(object):
         object.__setattr__(self, 'output_stdvs', output_stdvs)
         
         # Set the layer shapes of the decoder subgraph as class attributes:
-        object.__setattr__(self, 'decoder_shape_list', self.layer_shape_list[len(self.encoder_shape_list) - 1:])
-        object.__setattr__(self, 'output_shape',       self.layer_shape_list[-1])
+        object.__setattr__(self, '_decoder_shape_list', self._layer_shape_list[len(self._encoder_shape_list) - 1:])
+        object.__setattr__(self, '_output_shape',       self._layer_shape_list[-1])
 
         # Create the output variable sampler subgraph:
         with tf.variable_scope('output_sample', reuse = tf.AUTO_REUSE):
@@ -321,9 +335,9 @@ class VariationalAutoencoder(object):
 
                 # Set the i:th layer shape to a class attribute:
                 object.__setattr__(self,
-                                   'layer_shape_list',
-                                   self.layer_shape_list + [tf.shape(layer,
-                                                                     name = 'layer_' + str(i + 1) + '_output_shape')])
+                                   '_layer_shape_list',
+                                    self._layer_shape_list + [tf.shape(layer,
+                                                                       name = 'layer_' + str(i + 1) + '_output_shape')])
             
             # Create the j:th layer:
             elif i == j:
@@ -355,9 +369,9 @@ class VariationalAutoencoder(object):
             # Set the i:th layer shape to a class attribute:
             if i >= j:
                 object.__setattr__(self,
-                                   'layer_shape_list',
-                                   self.layer_shape_list + [tf.shape(output_means,
-                                                                     name = 'layer_' + str(i + 1) + '_output_shape')])
+                                   '_layer_shape_list',
+                                   self._layer_shape_list + [tf.shape(output_means,
+                                                                      name = 'layer_' + str(i + 1) + '_output_shape')])
                  
         return output_means, output_lstd2, output_stdvs
     
@@ -626,14 +640,16 @@ class VariationalAutoencoder(object):
 
         '''
 
-        # TO DO: in its current implementation, the first dimension could change, which
-        # we cannot allow. Freeze this dimension in the future by not using [-1].
+        # Form the specified new shape while preserving the batch (first) dimension:
+        if 'output_shape' in layer_dict:
+            new_shape = tf.concat([tf.shape(inputs)[:1], layer_dict['output_shape']], axis = 0)
 
-        # TO DO: for the case where the reshape is to flatten together all but the first
-        # channel, don't require that we know the shape beforehand. (layer_dict['output_shape']
-        # can be empty fo this).
-        
-        output = tf.reshape(inputs, [-1] + layer_dict['output_shape'], name = 'reshape_' + tag)
+        # Otherwise flatten together all but the batch (first) dimension:
+        else:
+            new_shape = tf.concat([tf.shape(inputs)[:1], [tf.reduce_prod(inputs.get_shape()[1:])]], axis = 0)
+
+        # Reshape the inputs:
+        output = tf.reshape(inputs, new_shape, name = 'reshape_' + tag)
         
         return output
     
@@ -948,10 +964,10 @@ class VariationalAutoencoder(object):
         if input_data is None:
 
             feed_dict = {self.inputs: np.zeros([1] + self.inputs_shape_list)}
-            return self._get_tensor_value(self.inputs_shape, feed_dict)[1:]
+            return self._get_tensor_value(self._inputs_shape, feed_dict)[1:]
         
         feed_dict = {self.inputs: input_data}
-        return self._get_tensor_value(self.inputs_shape, feed_dict)
+        return self._get_tensor_value(self._inputs_shape, feed_dict)
     
     def get_latent_shape(self, input_data = None):
 
@@ -968,10 +984,10 @@ class VariationalAutoencoder(object):
         if input_data is None:
 
             feed_dict = {self.inputs: np.zeros([1] + self.inputs_shape_list)}
-            return self._get_tensor_value(self.latent_shape, feed_dict)[1:]
+            return self._get_tensor_value(self._latent_shape, feed_dict)[1:]
         
         feed_dict = {self.inputs: input_data}
-        return self._get_tensor_value(self.latent_shape, feed_dict)
+        return self._get_tensor_value(self._latent_shape, feed_dict)
     
     def get_output_shape(self, input_data = None):
 
@@ -988,10 +1004,10 @@ class VariationalAutoencoder(object):
         if input_data is None:
 
             feed_dict = {self.inputs: np.zeros([1] + self.inputs_shape_list)}
-            return self._get_tensor_value(self.output_shape, feed_dict)[1:]
+            return self._get_tensor_value(self._output_shape, feed_dict)[1:]
         
         feed_dict = {self.inputs: input_data}
-        return self._get_tensor_value(self.output_shape, feed_dict)
+        return self._get_tensor_value(self._output_shape, feed_dict)
     
     def get_layer_shape_list(self, input_data = None):
 
@@ -1008,10 +1024,10 @@ class VariationalAutoencoder(object):
         if input_data is None:
 
             feed_dict = {self.inputs: np.zeros([1] + self.inputs_shape_list)}
-            return [x[1:] for x in self._get_tensor_value(self.layer_shape_list, feed_dict)]
+            return [x[1:] for x in self._get_tensor_value(self._layer_shape_list, feed_dict)]
 
         feed_dict = {self.inputs: input_data}
-        return self._get_tensor_value(self.layer_shape_list, feed_dict)
+        return self._get_tensor_value(self._layer_shape_list, feed_dict)
 
     def get_encoder_shape_list(self, input_data = None):
 
@@ -1028,10 +1044,10 @@ class VariationalAutoencoder(object):
         if input_data is None:
 
             feed_dict = {self.inputs: np.zeros([1] + self.inputs_shape_list)}
-            return [x[1:] for x in self._get_tensor_value(self.encoder_shape_list, feed_dict)]
+            return [x[1:] for x in self._get_tensor_value(self._encoder_shape_list, feed_dict)]
         
         feed_dict = {self.inputs: input_data}
-        return self._get_tensor_value(self.encoder_shape_list, feed_dict)
+        return self._get_tensor_value(self._encoder_shape_list, feed_dict)
         
     def get_decoder_shape_list(self, input_data = None):
 
@@ -1048,10 +1064,10 @@ class VariationalAutoencoder(object):
         if input_data is None:
 
             feed_dict = {self.inputs: np.zeros([1] + self.inputs_shape_list)}
-            return [x[1:] for x in self._get_tensor_value(self.decoder_shape_list, feed_dict)]
+            return [x[1:] for x in self._get_tensor_value(self._decoder_shape_list, feed_dict)]
         
         feed_dict = {self.inputs: input_data}
-        return self._get_tensor_value(self.decoder_shape_list, feed_dict)
+        return self._get_tensor_value(self._decoder_shape_list, feed_dict)
 
     def set_project_path(self):
 
