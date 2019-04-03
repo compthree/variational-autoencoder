@@ -896,7 +896,7 @@ class VariationalAutoencoder(object):
         '''
         
         if latent_sample is None:
-            latent_sample = np.random.normal(size = [1, self.latent_shape])
+            latent_sample = np.random.normal(size = [1] + list(self.get_latent_shape()))
 
         feed_dict = {self.latent_sample: latent_sample}
         return self._get_tensor_value(self.output_means, feed_dict)
@@ -933,7 +933,7 @@ class VariationalAutoencoder(object):
 
         assert len(tensor.get_shape().as_list()) == rank
         
-    def get_inputs_shape(self, input_data):
+    def get_inputs_shape(self, input_data = None):
 
         '''
         
@@ -944,11 +944,16 @@ class VariationalAutoencoder(object):
         Output:
 
         '''
+
+        if input_data is None:
+
+            feed_dict = {self.inputs: np.zeros([1] + self.inputs_shape_list)}
+            return self._get_tensor_value(self.inputs_shape, feed_dict)[1:]
         
         feed_dict = {self.inputs: input_data}
         return self._get_tensor_value(self.inputs_shape, feed_dict)
     
-    def get_latent_shape(self, input_data):
+    def get_latent_shape(self, input_data = None):
 
         '''
         
@@ -959,11 +964,16 @@ class VariationalAutoencoder(object):
         Output:
 
         '''
+
+        if input_data is None:
+
+            feed_dict = {self.inputs: np.zeros([1] + self.inputs_shape_list)}
+            return self._get_tensor_value(self.latent_shape, feed_dict)[1:]
         
         feed_dict = {self.inputs: input_data}
         return self._get_tensor_value(self.latent_shape, feed_dict)
     
-    def get_output_shape(self, input_data):
+    def get_output_shape(self, input_data = None):
 
         '''
         
@@ -974,11 +984,16 @@ class VariationalAutoencoder(object):
         Output:
 
         '''
+
+        if input_data is None:
+
+            feed_dict = {self.inputs: np.zeros([1] + self.inputs_shape_list)}
+            return self._get_tensor_value(self.output_shape, feed_dict)[1:]
         
         feed_dict = {self.inputs: input_data}
         return self._get_tensor_value(self.output_shape, feed_dict)
     
-    def get_layer_shape_list(self, input_data):
+    def get_layer_shape_list(self, input_data = None):
 
         '''
         
@@ -989,11 +1004,16 @@ class VariationalAutoencoder(object):
         Output:
 
         '''
-        
+
+        if input_data is None:
+
+            feed_dict = {self.inputs: np.zeros([1] + self.inputs_shape_list)}
+            return [x[1:] for x in self._get_tensor_value(self.layer_shape_list, feed_dict)]
+
         feed_dict = {self.inputs: input_data}
         return self._get_tensor_value(self.layer_shape_list, feed_dict)
 
-    def get_encoder_shape_list(self, input_data):
+    def get_encoder_shape_list(self, input_data = None):
 
         '''
         
@@ -1004,11 +1024,16 @@ class VariationalAutoencoder(object):
         Output:
 
         '''
+
+        if input_data is None:
+
+            feed_dict = {self.inputs: np.zeros([1] + self.inputs_shape_list)}
+            return [x[1:] for x in self._get_tensor_value(self.encoder_shape_list, feed_dict)]
         
         feed_dict = {self.inputs: input_data}
         return self._get_tensor_value(self.encoder_shape_list, feed_dict)
         
-    def get_decoder_shape_list(self, input_data):
+    def get_decoder_shape_list(self, input_data = None):
 
         '''
         
@@ -1019,6 +1044,11 @@ class VariationalAutoencoder(object):
         Output:
 
         '''
+
+        if input_data is None:
+
+            feed_dict = {self.inputs: np.zeros([1] + self.inputs_shape_list)}
+            return [x[1:] for x in self._get_tensor_value(self.decoder_shape_list, feed_dict)]
         
         feed_dict = {self.inputs: input_data}
         return self._get_tensor_value(self.decoder_shape_list, feed_dict)
