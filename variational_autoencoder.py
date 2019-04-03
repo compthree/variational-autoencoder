@@ -247,7 +247,8 @@ class VariationalAutoencoder(object):
         
         # Create the encoder:
         with tf.variable_scope('encoder', reuse = tf.AUTO_REUSE):
-            latent_means, latent_lstd2, latent_stdvs = self._create_subnetwork(self.inputs,
+            shifted_inputs = tf.add(self.inputs, -0.5, name = 'shift')
+            latent_means, latent_lstd2, latent_stdvs = self._create_subnetwork(shifted_inputs,
                                                                                self.encoder_list)
         
         # Name the output tensors from the encoder subgraph:
@@ -430,12 +431,14 @@ class VariationalAutoencoder(object):
         activation = self._get_activation(layer_dict)
         
         # Get the shape of the weights matrix and biases vector:
-        weight_shape = inputs.get_shape().as_list()[1:] + layer_dict['output_shape']
+        inputs_shape = inputs.get_shape().as_list()
+        weight_shape = inputs_shape[1:] + layer_dict['output_shape']
         biases_shape = layer_dict['output_shape']
 
         # Initialize the weights and biases using the 'fan-in' method:
         with tf.variable_scope('variable_init', reuse = tf.AUTO_REUSE):
-            stddev = tf.sqrt(2 / tf.cast(weight_shape[0], dtype = tf.float64))
+            num_inputs = tf.reduce_prod(inputs_shape[1:], name = 'number_of_inputs')
+            stddev = tf.sqrt(2 / tf.cast(num_inputs, dtype = tf.float64))
             weight_init = tf.truncated_normal(weight_shape, stddev = stddev, dtype = tf.float64)
             biases_init = tf.zeros(biases_shape, dtype = tf.float64)
 
@@ -486,12 +489,14 @@ class VariationalAutoencoder(object):
         
         # Get the shape of the weights matrix and biases vector:
         inputs_shape = inputs.get_shape().as_list()
-        kernel_shape = layer_dict['kernel_shape'] + inputs.get_shape().as_list()[3:] + layer_dict['output_chann']
+        kernel_shape = layer_dict['kernel_shape'] + inputs_shape[-1:] + layer_dict['output_chann']
         biases_shape = layer_dict['output_chann']
         
         # Initialize the weights and biases using the 'fan-in' method:
         with tf.variable_scope('variable_init', reuse = tf.AUTO_REUSE):
-            stddev = tf.sqrt(2 / tf.cast(tf.reduce_prod(inputs_shape[1:]), dtype = tf.float64))
+            # stddev = tf.sqrt(2 / tf.cast(tf.reduce_prod(inputs_shape[1:]), dtype = tf.float64))
+            num_inputs = tf.reduce_prod(kernel_shape[:-1], name = 'number_of_inputs')
+            stddev = tf.sqrt(2 / tf.cast(num_inputs, dtype = tf.float64))
             kernel_init = tf.truncated_normal(kernel_shape, stddev = stddev, dtype = tf.float64)
             biases_init = tf.zeros(biases_shape, dtype = tf.float64)
 
@@ -561,7 +566,11 @@ class VariationalAutoencoder(object):
         
         # Initialize the weights and biases using the 'fan-in' method:
         with tf.variable_scope('variable_init', reuse = tf.AUTO_REUSE):
-            stddev = tf.sqrt(2 / tf.cast(tf.reduce_prod(inputs_shape[1:]), dtype = tf.float64))
+            # stddev = tf.sqrt(2 / tf.cast(tf.reduce_prod(inputs_shape[1:]), dtype = tf.float64))
+            # num_inputs = tf.reduce_prod(kernel_shape[:-2] + kernel_shape[-1:], name = 'number_of_inputs')
+            # num_inputs = tf.reduce_prod(kernel_shape[:-1], name = 'number_of_inputs')
+            # stddev = tf.sqrt(2 / tf.cast(num_inputs, dtype = tf.float64))
+            stddev = 0.08
             kernel_init = tf.truncated_normal(kernel_shape, stddev = stddev, dtype = tf.float64)
             biases_init = tf.zeros(biases_shape, dtype = tf.float64)
         
@@ -897,7 +906,7 @@ class VariationalAutoencoder(object):
         '''
         
         feed_dict = {self.inputs: input_data}
-        return self._get_tensor_value(self.latent_means, feed_dict)
+        return self._get_tensor_value(self.latent_means, feed_dict), self._get_tensor_value(self.latent_stdvs, feed_dict)
         
     def decode(self, latent_sample = None):
 
