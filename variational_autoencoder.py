@@ -567,10 +567,10 @@ class VariationalAutoencoder(object):
         # Initialize the weights and biases using the 'fan-in' method:
         with tf.variable_scope('variable_init', reuse = tf.AUTO_REUSE):
             # stddev = tf.sqrt(2 / tf.cast(tf.reduce_prod(inputs_shape[1:]), dtype = tf.float64))
-            # num_inputs = tf.reduce_prod(kernel_shape[:-2] + kernel_shape[-1:], name = 'number_of_inputs')
+            num_inputs = tf.reduce_prod(kernel_shape[:-2] + kernel_shape[-1:], name = 'number_of_inputs')
             # num_inputs = tf.reduce_prod(kernel_shape[:-1], name = 'number_of_inputs')
-            # stddev = tf.sqrt(2 / tf.cast(num_inputs, dtype = tf.float64))
-            stddev = 0.08
+            stddev = tf.sqrt(2 / tf.cast(num_inputs, dtype = tf.float64))
+            # stddev = 0.08
             kernel_init = tf.truncated_normal(kernel_shape, stddev = stddev, dtype = tf.float64)
             biases_init = tf.zeros(biases_shape, dtype = tf.float64)
         
