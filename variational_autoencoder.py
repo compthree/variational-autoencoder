@@ -139,7 +139,7 @@ class VariationalAutoencoder(object):
             # Create the loss function:
             with tf.variable_scope('loss_function', reuse = tf.AUTO_REUSE):
                 self._compute_losses()
-            loss = tf.identity(self.loss, name = 'loss')
+            loss = tf.identity(self.loss, name = self.loss_type + '_loss')
 
             # Create the optimizer:
             with tf.variable_scope('optimizer', reuse = tf.AUTO_REUSE):
@@ -200,7 +200,7 @@ class VariationalAutoencoder(object):
         sess = tf.Session(graph = self.graph)
         object.__setattr__(self, 'sess', sess)
 
-        # Run the variable initializer:
+        # Run the variable initializer (must do this before getting layer shapes below):
         self.sess.run(self.init)
 
         # Set the input, latent, and output shapes (numbers) as class attributes:
@@ -212,6 +212,10 @@ class VariationalAutoencoder(object):
         object.__setattr__(self, 'layer_shape_list',   self.get_layer_shape_list())
         object.__setattr__(self, 'encoder_shape_list', self.get_encoder_shape_list())
         object.__setattr__(self, 'decoder_shape_list', self.get_decoder_shape_list())
+
+        # Set the layer shapes for the perceptual loss layers:
+        if self.loss_type == 'perceptual':
+            object.__setattr__(self, 'percept_shape_list', self.get_percept_shape_list())
 
         # Try to load a previously trained model for either inference or future training:
         checkpoint_file_name = os.path.join(self.model_path, 'checkpoint')
@@ -359,7 +363,7 @@ class VariationalAutoencoder(object):
             # Create the remaining layers:
             else:
 
-                # The remaining layers are 'reshape' layers: 
+                # The remaining layers are 'reshape' layers (really, there should be no more than one): 
                 assert layer_dict['layer_type'] == 'reshape'
                  
                 # Compute the i:th layer output:
@@ -407,8 +411,11 @@ class VariationalAutoencoder(object):
             elif layer_type == 'reshape':
                 output = self._create_reshape_layer(inputs, layer_dict, tag)
 
+            elif layer_type == 're-size':
+                output = self._create_re_size_layer(inputs, layer_dict, tag)
+
             else:
-                raise Exception('Layer type {} must be, but is not one of, "convolu", "deconvo", "full_cn", "reshape".'.format(layer_type))
+                raise Exception('Layer type {} must be, but is not one of, "convolu", "deconvo", "full_cn", "reshape", or "re-size".'.format(layer_type))
 
         return output        
 
@@ -425,7 +432,7 @@ class VariationalAutoencoder(object):
         '''
         
         # Because this layer is fully connected, the input tensor must have rank 2:
-        self.check_tensor_rank(inputs, 2)
+        self.check_tensor_rank(inputs, [2])
         
         # Get the activation function:
         activation = self._get_activation(layer_dict)
@@ -494,7 +501,6 @@ class VariationalAutoencoder(object):
         
         # Initialize the weights and biases using the 'fan-in' method:
         with tf.variable_scope('variable_init', reuse = tf.AUTO_REUSE):
-            # stddev = tf.sqrt(2 / tf.cast(tf.reduce_prod(inputs_shape[1:]), dtype = tf.float64))
             num_inputs = tf.reduce_prod(kernel_shape[:-1], name = 'number_of_inputs')
             stddev = tf.sqrt(2 / tf.cast(num_inputs, dtype = tf.float64))
             kernel_init = tf.truncated_normal(kernel_shape, stddev = stddev, dtype = tf.float64)
@@ -512,7 +518,7 @@ class VariationalAutoencoder(object):
         output = tf.nn.convolution(inputs,
                                    kernel,
                                    padding = 'SAME',
-                                   name = 'convolve___' + tag)
+                                   name = 'convolve_' + tag)
         output = tf.add(output, biases, name = 'biases_add_' + tag)
 
         # Perform batch-normalization:
@@ -549,7 +555,7 @@ class VariationalAutoencoder(object):
         '''
 
         # 'conv2d_transpose' requires its input tensor to be of rank 4:
-        self.check_tensor_rank(inputs, 4)
+        self.check_tensor_rank(inputs, [4])
 
         # Apply the unpooling operation first, before getting the shape of the
         # input tensor below, as this operation changes that shape:
@@ -566,11 +572,8 @@ class VariationalAutoencoder(object):
         
         # Initialize the weights and biases using the 'fan-in' method:
         with tf.variable_scope('variable_init', reuse = tf.AUTO_REUSE):
-            # stddev = tf.sqrt(2 / tf.cast(tf.reduce_prod(inputs_shape[1:]), dtype = tf.float64))
             num_inputs = tf.reduce_prod(kernel_shape[:-2] + kernel_shape[-1:], name = 'number_of_inputs')
-            # num_inputs = tf.reduce_prod(kernel_shape[:-1], name = 'number_of_inputs')
             stddev = tf.sqrt(2 / tf.cast(num_inputs, dtype = tf.float64))
-            # stddev = 0.08
             kernel_init = tf.truncated_normal(kernel_shape, stddev = stddev, dtype = tf.float64)
             biases_init = tf.zeros(biases_shape, dtype = tf.float64)
         
@@ -660,6 +663,26 @@ class VariationalAutoencoder(object):
         # Reshape the inputs:
         output = tf.reshape(inputs, new_shape, name = 'reshape_' + tag)
         
+        return output
+
+    def _create_re_size_layer(self, inputs, layer_dict, tag):
+
+        '''
+        
+        Description:
+
+        Inputs:
+
+        Output:
+
+        '''
+
+        # 'tf.image.resize_images' requires its input tensor to be of rank 3 or 4:
+        self.check_tensor_rank(inputs, [3, 4])
+
+        output = tf.image.resize_images(inputs, layer_dict['output_shape'])
+        output = tf.cast(output, tf.float64)
+
         return output
     
     def _get_activation(self, layer_dict):
@@ -793,9 +816,58 @@ class VariationalAutoencoder(object):
 
         # Compute the loss from the decoder part of the network:
         with tf.variable_scope('decoder_loss', reuse = tf.AUTO_REUSE):
-            decoder_loss = -tf.reduce_sum(self.inputs * tf.log(1e-10 + self.output_means)
-                                          + (1 - self.inputs) * tf.log(1e-10 + 1 - self.output_means), 
-                                          axis = tf.range(1, tf.rank(self.output_means)))
+
+            # Compute the perceptual loss:
+            if self.loss_type == 'perceptual':
+
+                num_loss_terms = 0
+
+                layer = tf.concat([self.inputs, self.output_means], axis = 0)
+                decoder_loss = tf.cast(0.0, tf.float64, name = 'initialize_decoder_loss')
+
+                # At least one loss weight must be positive:
+                assert any([layer_dict['loss_weight'] > 0 for layer_dict in self.percept_list])
+
+                # Get the running total of all positive weights:
+                total = sum([max(layer_dict['loss_weight'], 0) for layer_dict in self.percept_list])
+                # total = tf.cast(total, tf.float64, name = 'positive_loss_weight_sum')
+
+                # Build the perceptual loss network:
+                for i, layer_dict in enumerate(self.percept_list):
+
+                    # Compute the i:th layer output:
+                    layer = self._create_layer(layer, layer_dict, tag = str(i + 1))
+
+                    # Compute the loss at the i:th layer (ignore layers with nonpositive weights):
+                    if layer_dict['loss_weight'] > 0:
+                        with tf.variable_scope('layer_loss_' + str(i + 1), reuse = tf.AUTO_REUSE):
+                            l = tf.cast(tf.divide(tf.shape(layer)[0], 2), dtype = tf.int64)
+                            source, reform = tf.split(layer, [l, l], axis = 0)
+                            layer_loss = tf.cast(tf.losses.mean_squared_error(source, reform), tf.float64, name = 'layer_loss')
+                            layer_wght = tf.cast(layer_dict['loss_weight'] / total, tf.float64, name = 'layer_weight')
+                            decoder_loss += tf.multiply(layer_wght, layer_loss)
+
+                    # Set the i:th layer shape to a class attribute:
+                    object.__setattr__(self,
+                                       '_layer_shape_list',
+                                        self._layer_shape_list + [tf.shape(layer,
+                                                                           name = 'layer_' + str(i + 1) + '_output_shape')])
+
+                # # Convert the above recursive sum for 'decoder_loss' into an average:
+                # decoder_loss = tf.divide(decoder_loss, total, name = 'mean_decoder_loss')
+
+                # Set the layer shapes of the perceptual loss subgraph as class attributes:
+                mark = len(self._encoder_shape_list) + len(self._decoder_shape_list)
+                object.__setattr__(self, '_percept_shape_list', self._layer_shape_list[mark - 1:])
+            
+            # Compute the pixel loss:
+            else:
+                if self.loss_type != 'pixel':
+                    raise Exception('Loss type must be either "perceptual" or "pixel".')
+
+                decoder_loss = -tf.reduce_sum(self.inputs * tf.log(1e-10 + self.output_means)
+                                              + (1 - self.inputs) * tf.log(1e-10 + 1 - self.output_means), 
+                                              axis = tf.range(1, tf.rank(self.output_means)))
         
         # Sum and average together the two components to get the overall loss:
         overall_loss = tf.add(encoder_loss, decoder_loss, name = 'total_loss')
@@ -954,9 +1026,9 @@ class VariationalAutoencoder(object):
         
         self.saver.restore(self.sess, self.save_path)
 
-    def check_tensor_rank(self, tensor, rank):
+    def check_tensor_rank(self, tensor, rank_list):
 
-        assert len(tensor.get_shape().as_list()) == rank
+        assert len(tensor.get_shape().as_list()) in rank_list
         
     def get_inputs_shape(self, input_data = None):
 
@@ -1077,6 +1149,29 @@ class VariationalAutoencoder(object):
         
         feed_dict = {self.inputs: input_data}
         return self._get_tensor_value(self._decoder_shape_list, feed_dict)
+
+    def get_percept_shape_list(self, input_data = None):
+
+        '''
+        
+        Description:
+
+        Inputs:
+
+        Output:
+
+        '''
+
+        if not hasattr(self, '_percept_shape_list'):
+            return []
+
+        if input_data is None:
+
+            feed_dict = {self.inputs: np.zeros([1] + self.inputs_shape_list)}
+            return [x[1:] for x in self._get_tensor_value(self._percept_shape_list, feed_dict)]
+        
+        feed_dict = {self.inputs: input_data}
+        return self._get_tensor_value(self._percept_shape_list, feed_dict)
 
     def set_project_path(self):
 
@@ -1316,6 +1411,43 @@ class VariationalAutoencoder(object):
         save_model_path = os.path.join(self.model_path, self.model_path.split('/')[-1])
         self.saver.save(self.sess, save_model_path)
         self.save_model_details()
+
+    def load_initial_loss_weights(self, weight_dict):
+
+        if self.loss_type == 'pixel':
+            pass
+
+        var_list = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope = 'loss_function/decoder_loss')
+        var_name_list = [''.join(var.name.split(':0')[:-1]) for var in var_list]
+
+        input_weight_name_list = sorted([x for x in sorted(weight_dict.keys()) if x.endswith('W')])
+        input_biases_name_list = sorted([x for x in sorted(weight_dict.keys()) if x.endswith('b')])
+
+        graph_weight_name_list = [name for name in var_name_list if 'biases' not in name]
+        graph_biases_name_list = [name for name in var_name_list if 'biases' in name]
+        
+        assert len(graph_weight_name_list) <= len(input_weight_name_list)
+        assert len(graph_biases_name_list) <= len(input_biases_name_list)
+        
+        for i in range(len(graph_weight_name_list)):
+            
+            inputs_name = input_weight_name_list[i]
+            target_name = graph_weight_name_list[i]
+            
+            with tf.variable_scope('', reuse = True):
+                inputs = weight_dict[inputs_name]
+                target = tf.get_variable(target_name, dtype = tf.float64)
+                self.sess.run(tf.assign(target, inputs))
+
+        for i in range(len(graph_biases_name_list)):
+            
+            inputs_name = input_biases_name_list[i]
+            target_name = graph_biases_name_list[i]
+            
+            with tf.variable_scope('', reuse = True):
+                inputs = weight_dict[inputs_name]
+                target = tf.get_variable(target_name, dtype = tf.float64)
+                self.sess.run(tf.assign(target, inputs))
 
     def _strip_consts(self, max_const_size = 32):
 

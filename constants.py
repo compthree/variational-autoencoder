@@ -56,7 +56,12 @@ LIST_ATTRIBUTES = ['graph',
                    'builder',
                    'is_training',
                    'use_batch_normalization',
-                   'averaging_axes_length']
+                   'averaging_axes_length',
+                   'loss_type',
+                   'loss_inputs_shape_list',
+                   'percept_list',
+                   '_percept_shape_list',
+                   'percept_shape_list']
 LIST_MODEL_DETAIL_KEYS = ['encoder_list',
                           'decoder_list',
                           'inputs_shape_list',
