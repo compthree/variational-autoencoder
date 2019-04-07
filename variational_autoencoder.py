@@ -143,7 +143,10 @@ class VariationalAutoencoder(object):
 
             # Create the optimizer:
             with tf.variable_scope('optimizer', reuse = tf.AUTO_REUSE):
-                optimizer = tf.train.AdamOptimizer(learning_rate = self.learning_rate).minimize(self.loss)
+                var_list = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope = 'variational_autoencoder')
+                optimizer = (tf.train
+                    .AdamOptimizer(learning_rate = self.learning_rate)
+                    .minimize(self.loss, var_list = var_list))
             object.__setattr__(self, 'optimizer', optimizer)
 
             # Create the variable initializer:
@@ -853,9 +856,6 @@ class VariationalAutoencoder(object):
                                         self._layer_shape_list + [tf.shape(layer,
                                                                            name = 'layer_' + str(i + 1) + '_output_shape')])
 
-                # # Convert the above recursive sum for 'decoder_loss' into an average:
-                # decoder_loss = tf.divide(decoder_loss, total, name = 'mean_decoder_loss')
-
                 # Set the layer shapes of the perceptual loss subgraph as class attributes:
                 mark = len(self._encoder_shape_list) + len(self._decoder_shape_list)
                 object.__setattr__(self, '_percept_shape_list', self._layer_shape_list[mark - 1:])
@@ -870,7 +870,7 @@ class VariationalAutoencoder(object):
                                               axis = tf.range(1, tf.rank(self.output_means)))
         
         # Sum and average together the two components to get the overall loss:
-        overall_loss = tf.add(encoder_loss, decoder_loss, name = 'total_loss')
+        overall_loss = tf.add(encoder_loss, 0.5 * decoder_loss, name = 'total_loss')
         average_loss = tf.reduce_mean(overall_loss, name = 'mean_over_inputs')
         
         # Set the loss as a class attribute:
