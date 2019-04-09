@@ -61,7 +61,11 @@ LIST_ATTRIBUTES = ['graph',
                    'loss_inputs_shape_list',
                    'percept_list',
                    '_percept_shape_list',
-                   'percept_shape_list']
+                   'percept_shape_list',
+                   'loss_type',
+                   'encoder_loss_weight',
+                   'decoder_loss_weight',
+                   'is_variational']
 LIST_MODEL_DETAIL_KEYS = ['encoder_list',
                           'decoder_list',
                           'inputs_shape_list',
@@ -69,4 +73,8 @@ LIST_MODEL_DETAIL_KEYS = ['encoder_list',
                           'project_name',
                           'model_name',
                           'num_trained_epochs',
-                          'use_batch_normalization']
+                          'use_batch_normalization',
+                          'loss_type',
+                          'encoder_loss_weight',
+                          'decoder_loss_weight',
+                          'is_variational']

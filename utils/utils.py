@@ -38,9 +38,7 @@ def load_mnist_data():
         with open(path, 'rb') as file_handle:
             data_tuple = pickle.load(file_handle)
             data_dict[key]['inputs'] = np.stack(data_tuple[0] / 255)
-            data_dict[key]['output'] = np.stack(data_tuple[1])
+            data_dict[key]['inputs'] = np.expand_dims(np.copy(data_dict[key]['inputs']), axis = 3)
+            data_dict[key]['target'] = np.stack(data_tuple[1])
 
-    # We only use the input training data. We do not use its labels:
-    data = np.expand_dims(np.copy(data_dict['train']['inputs']), axis = 3)
-
-    return data
+    return data_dict

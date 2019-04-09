@@ -100,6 +100,14 @@ class VariationalAutoencoder(object):
             object.__setattr__(self, 'num_trained_epochs', 0)
         if not hasattr(self, 'use_batch_normalization'):
             object.__setattr__(self, 'use_batch_normalization', False)
+        if not hasattr(self, 'loss_type'):
+            object.__setattr__(self, 'loss_type', 'pixel')
+        if not hasattr(self, 'encoder_loss_weight'):
+            object.__setattr__(self, 'encoder_loss_weight', 1.0)
+        if not hasattr(self, 'decoder_loss_weight'):
+            object.__setattr__(self, 'decoder_loss_weight', 0.5)
+        if not hasattr(self, 'is_variational'):
+            object.__setattr__(self, 'is_variational', False)
         if self.use_batch_normalization and not hasattr(self, 'averaging_axes_length'):
             object.__setattr__(self, 'averaging_axes_length', 'long')
 
@@ -115,7 +123,7 @@ class VariationalAutoencoder(object):
         
             # Inputs placeholder:
             inputs = tf.placeholder(name = 'inputs',
-                                    dtype = tf.float64,
+                                    dtype = tf.float32,
                                     shape = [None] + self.inputs_shape_list)
             object.__setattr__(self, 'inputs', inputs)
 
@@ -193,6 +201,18 @@ class VariationalAutoencoder(object):
 
         if hasattr(self, 'averaging_axes_length'):
             model_details_dict['averaging_axes_length'] = self.averaging_axes_length
+
+        if hasattr(self, 'loss_type'):
+            model_details_dict['loss_type'] = self.loss_type
+
+        if hasattr(self,'encoder_loss_weight'):
+            model_details_dict['encoder_loss_weight'] = self.encoder_loss_weight
+
+        if hasattr(self,'decoder_loss_weight'):
+            model_details_dict['decoder_loss_weight'] = self.decoder_loss_weight
+
+        if hasattr(self, 'is_variational'):
+            model_details_dict['is_variational'] = self.is_variational
 
         return model_details_dict
 
@@ -275,12 +295,16 @@ class VariationalAutoencoder(object):
         # Create the latent variable sampler subgraph:
         with tf.variable_scope('latent_sample', reuse = tf.AUTO_REUSE):
 
-            # Randomly draw from the latent variable distribution:
-            latent_sample = tf.random_normal(tf.shape(self.latent_means),
-                                             mean = self.latent_means,
-                                             stddev = self.latent_stdvs,
-                                             name = 'latent_sample',
-                                             dtype = tf.float64)
+            if self.is_variational:
+                # Randomly draw from the latent variable distribution:
+                latent_sample = tf.random_normal(tf.shape(self.latent_means),
+                                                 mean = self.latent_means,
+                                                 stddev = self.latent_stdvs,
+                                                 name = 'latent_sample',
+                                                 dtype = tf.float32)
+            else:
+                # Encoder subnetwork outputs feed directly into the decoder subnetwork:
+                latent_sample = self.latent_means
 
             # Set the latent sample as a class attribute:
             object.__setattr__(self, 'latent_sample', latent_sample)
@@ -447,17 +471,18 @@ class VariationalAutoencoder(object):
 
         # Initialize the weights and biases using the 'fan-in' method:
         with tf.variable_scope('variable_init', reuse = tf.AUTO_REUSE):
-            num_inputs = tf.reduce_prod(inputs_shape[1:], name = 'number_of_inputs')
-            stddev = tf.sqrt(2 / tf.cast(num_inputs, dtype = tf.float64))
-            weight_init = tf.truncated_normal(weight_shape, stddev = stddev, dtype = tf.float64)
-            biases_init = tf.zeros(biases_shape, dtype = tf.float64)
+            num_inputs = tf.reduce_prod(inputs_shape[1:])
+            num_inputs = tf.cast(num_inputs, dtype = tf.float32, name = 'number_of_inputs')
+            stddev = tf.sqrt(2 / num_inputs, name = 'fan_in_stddev')
+            weight_init = tf.truncated_normal(weight_shape, stddev = stddev, dtype = tf.float32)
+            biases_init = tf.zeros(biases_shape, dtype = tf.float32)
 
         # Create the weights and biases variables:
         weight = tf.get_variable(name  = 'weight_' + tag,
-                                 dtype = tf.float64,
+                                 dtype = tf.float32,
                                  initializer = weight_init)
         biases = tf.get_variable(name  = 'biases_' + tag,
-                                 dtype = tf.float64,
+                                 dtype = tf.float32,
                                  initializer = biases_init)
 
         # Layer operations:
@@ -504,17 +529,18 @@ class VariationalAutoencoder(object):
         
         # Initialize the weights and biases using the 'fan-in' method:
         with tf.variable_scope('variable_init', reuse = tf.AUTO_REUSE):
-            num_inputs = tf.reduce_prod(kernel_shape[:-1], name = 'number_of_inputs')
-            stddev = tf.sqrt(2 / tf.cast(num_inputs, dtype = tf.float64))
-            kernel_init = tf.truncated_normal(kernel_shape, stddev = stddev, dtype = tf.float64)
-            biases_init = tf.zeros(biases_shape, dtype = tf.float64)
+            num_inputs = tf.reduce_prod(kernel_shape[:-1])
+            num_inputs = tf.cast(num_inputs, dtype = tf.float32, name = 'number_of_inputs')
+            stddev = tf.sqrt(2 / num_inputs, name = 'fan_in_stddev')
+            kernel_init = tf.truncated_normal(kernel_shape, stddev = stddev, dtype = tf.float32)
+            biases_init = tf.zeros(biases_shape, dtype = tf.float32)
 
         # Create the weights and biases variables:
         kernel = tf.get_variable(name  = 'kernel_' + tag,
-                                 dtype = tf.float64,
+                                 dtype = tf.float32,
                                  initializer = kernel_init)
         biases = tf.get_variable(name  = 'biases_' + tag,
-                                 dtype = tf.float64,
+                                 dtype = tf.float32,
                                  initializer = biases_init)
     
         # Layer operations:
@@ -575,17 +601,18 @@ class VariationalAutoencoder(object):
         
         # Initialize the weights and biases using the 'fan-in' method:
         with tf.variable_scope('variable_init', reuse = tf.AUTO_REUSE):
-            num_inputs = tf.reduce_prod(kernel_shape[:-2] + kernel_shape[-1:], name = 'number_of_inputs')
-            stddev = tf.sqrt(2 / tf.cast(num_inputs, dtype = tf.float64))
-            kernel_init = tf.truncated_normal(kernel_shape, stddev = stddev, dtype = tf.float64)
-            biases_init = tf.zeros(biases_shape, dtype = tf.float64)
+            num_inputs = tf.reduce_prod(kernel_shape[:-2] + kernel_shape[-1:])
+            num_inputs = tf.cast(num_inputs, dtype = tf.float32, name = 'number_of_inputs')
+            stddev = tf.sqrt(2 / num_inputs, name = 'fan_in_stddev')
+            kernel_init = tf.truncated_normal(kernel_shape, stddev = stddev, dtype = tf.float32)
+            biases_init = tf.zeros(biases_shape, dtype = tf.float32)
         
         # Create the weights and biases variables:
         kernel = tf.get_variable(name  = 'kernel_' + tag,
-                                 dtype = tf.float64,
+                                 dtype = tf.float32,
                                  initializer = kernel_init)
         biases = tf.get_variable(name  = 'biases_' + tag,
-                                 dtype = tf.float64,
+                                 dtype = tf.float32,
                                  initializer = biases_init)
         
         # Layer operations: 
@@ -684,7 +711,6 @@ class VariationalAutoencoder(object):
         self.check_tensor_rank(inputs, [3, 4])
 
         output = tf.image.resize_images(inputs, layer_dict['output_shape'])
-        output = tf.cast(output, tf.float64)
 
         return output
     
@@ -736,11 +762,11 @@ class VariationalAutoencoder(object):
 
         # Get or initialize the shift and scale variables for batch normalization:
         scale = tf.get_variable(name = 'scale',
-                                dtype = tf.float64,
+                                dtype = tf.float32,
                                 shape = inputs.get_shape()[cutoff:],
                                 initializer = tf.initializers.ones)
         shift = tf.get_variable(name = 'shift',
-                                dtype = tf.float64,
+                                dtype = tf.float32,
                                 shape = inputs.get_shape()[cutoff:],
                                 initializer = tf.initializers.zeros)
 
@@ -748,12 +774,12 @@ class VariationalAutoencoder(object):
         # (Note: with 'trainable = False', these variables are not part
         # of the dataflow for training.)
         pop_mean = tf.get_variable(name = 'population_mean',
-                                   dtype = tf.float64,
+                                   dtype = tf.float32,
                                    shape = inputs.get_shape()[cutoff:],
                                    initializer = tf.initializers.zeros,
                                    trainable = False)
         pop_std2 = tf.get_variable(name = 'population_std2',
-                                   dtype = tf.float64,
+                                   dtype = tf.float32,
                                    shape = inputs.get_shape()[cutoff:],
                                    initializer = tf.initializers.ones,
                                    trainable = False)
@@ -768,7 +794,7 @@ class VariationalAutoencoder(object):
                             lambda: train_decay, # Return if training.
                             lambda: 1.0,         # Return if not training.
                             name = 'train_condition')
-            decay = tf.cast(decay, tf.float64)
+            decay = tf.cast(decay, tf.float32)
 
         # Tensors 'train_mean' and 'train_std2' are not part of the dataflow for training.
         # Their only purpose is to update the population mean and std2 estimates:
@@ -810,30 +836,20 @@ class VariationalAutoencoder(object):
 
         '''
 
-        # Compute the loss from the encoder part of the network (KL-divergence):
-        with tf.variable_scope('encoder_loss', reuse = tf.AUTO_REUSE):
-            encoder_loss = -0.5 * tf.reduce_sum(1 + self.latent_lstd2
-                                                  - tf.square(self.latent_means)
-                                                  - tf.exp(self.latent_lstd2),
-                                                axis = tf.range(1, tf.rank(self.latent_lstd2)))
-
         # Compute the loss from the decoder part of the network:
         with tf.variable_scope('decoder_loss', reuse = tf.AUTO_REUSE):
 
             # Compute the perceptual loss:
             if self.loss_type == 'perceptual':
 
-                num_loss_terms = 0
-
                 layer = tf.concat([self.inputs, self.output_means], axis = 0)
-                decoder_loss = tf.cast(0.0, tf.float64, name = 'initialize_decoder_loss')
+                decoder_loss = tf.constant(0, tf.float32, name = 'initialize_decoder_loss')
 
                 # At least one loss weight must be positive:
                 assert any([layer_dict['loss_weight'] > 0 for layer_dict in self.percept_list])
 
                 # Get the running total of all positive weights:
                 total = sum([max(layer_dict['loss_weight'], 0) for layer_dict in self.percept_list])
-                # total = tf.cast(total, tf.float64, name = 'positive_loss_weight_sum')
 
                 # Build the perceptual loss network:
                 for i, layer_dict in enumerate(self.percept_list):
@@ -844,11 +860,11 @@ class VariationalAutoencoder(object):
                     # Compute the loss at the i:th layer (ignore layers with nonpositive weights):
                     if layer_dict['loss_weight'] > 0:
                         with tf.variable_scope('layer_loss_' + str(i + 1), reuse = tf.AUTO_REUSE):
-                            l = tf.cast(tf.divide(tf.shape(layer)[0], 2), dtype = tf.int64)
-                            source, reform = tf.split(layer, [l, l], axis = 0)
-                            layer_loss = tf.cast(tf.losses.mean_squared_error(source, reform), tf.float64, name = 'layer_loss')
-                            layer_wght = tf.cast(layer_dict['loss_weight'] / total, tf.float64, name = 'layer_weight')
-                            decoder_loss += tf.multiply(layer_wght, layer_loss)
+                            cut = tf.floordiv(tf.shape(layer)[0], 2)
+                            source, reform = tf.split(layer, [cut, cut], axis = 0)
+                            layer_loss = tf.losses.mean_squared_error(source, reform)
+                            layer_wght = tf.divide(layer_dict['loss_weight'], total, name = 'normalized_weight')
+                            decoder_loss += tf.multiply(layer_wght, layer_loss, name = 'weighted_layer_loss')
 
                     # Set the i:th layer shape to a class attribute:
                     object.__setattr__(self,
@@ -868,10 +884,29 @@ class VariationalAutoencoder(object):
                 decoder_loss = -tf.reduce_sum(self.inputs * tf.log(1e-10 + self.output_means)
                                               + (1 - self.inputs) * tf.log(1e-10 + 1 - self.output_means), 
                                               axis = tf.range(1, tf.rank(self.output_means)))
+
+        if not self.is_variational:
+
+            average_loss = tf.reduce_mean(decoder_loss, name = 'mean_combined_loss_over_inputs')
+            object.__setattr__(self, 'loss', average_loss)
+
+            return
+
+        # Compute the loss from the encoder part of the network (KL-divergence):
+        with tf.variable_scope('encoder_loss', reuse = tf.AUTO_REUSE):
+            encoder_loss = -0.5 * tf.reduce_sum(1 + self.latent_lstd2
+                                                  - tf.square(self.latent_means)
+                                                  - tf.exp(self.latent_lstd2),
+                                                axis = tf.range(1, tf.rank(self.latent_lstd2)))
         
         # Sum and average together the two components to get the overall loss:
-        overall_loss = tf.add(encoder_loss, 0.5 * decoder_loss, name = 'total_loss')
-        average_loss = tf.reduce_mean(overall_loss, name = 'mean_over_inputs')
+        encoder_loss = tf.multiply(self.encoder_loss_weight, encoder_loss, name = 'weighted_encoder_loss')
+        decoder_loss = tf.multiply(self.decoder_loss_weight, decoder_loss, name = 'weighted_decoder_loss')
+        overall_loss = tf.add(encoder_loss, decoder_loss, name = 'combined_loss')
+        average_loss = tf.reduce_mean(overall_loss, name = 'mean_combined_loss_over_inputs')
+
+        # # # TO DO: delete this line and uncomment out the above:
+        # average_loss = tf.reduce_mean(decoder_loss, name = 'mean_combined_loss_over_inputs')
         
         # Set the loss as a class attribute:
         object.__setattr__(self, 'loss', average_loss)
@@ -945,6 +980,10 @@ class VariationalAutoencoder(object):
 
                 # Compute average loss
                 avg_loss += loss * (batch_size / num_samples)
+
+                # Check that the loss is not diverging:
+                # print('loss:', loss)
+                # print('encode:', self.encode(input_data[:1]))
 
             object.__setattr__(self, 'avg_loss', avg_loss)
             object.__setattr__(self, 'num_trained_epochs', self.num_trained_epochs + 1)
@@ -1436,7 +1475,7 @@ class VariationalAutoencoder(object):
             
             with tf.variable_scope('', reuse = True):
                 inputs = weight_dict[inputs_name]
-                target = tf.get_variable(target_name, dtype = tf.float64)
+                target = tf.get_variable(target_name, dtype = tf.float32)
                 self.sess.run(tf.assign(target, inputs))
 
         for i in range(len(graph_biases_name_list)):
@@ -1446,7 +1485,7 @@ class VariationalAutoencoder(object):
             
             with tf.variable_scope('', reuse = True):
                 inputs = weight_dict[inputs_name]
-                target = tf.get_variable(target_name, dtype = tf.float64)
+                target = tf.get_variable(target_name, dtype = tf.float32)
                 self.sess.run(tf.assign(target, inputs))
 
     def _strip_consts(self, max_const_size = 32):
