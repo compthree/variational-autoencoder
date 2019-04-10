@@ -107,7 +107,7 @@ class VariationalAutoencoder(object):
         if not hasattr(self, 'decoder_loss_weight'):
             object.__setattr__(self, 'decoder_loss_weight', 0.5)
         if not hasattr(self, 'is_variational'):
-            object.__setattr__(self, 'is_variational', False)
+            object.__setattr__(self, 'is_variational', True)
         if self.use_batch_normalization and not hasattr(self, 'averaging_axes_length'):
             object.__setattr__(self, 'averaging_axes_length', 'long')
 
@@ -180,6 +180,9 @@ class VariationalAutoencoder(object):
 
         if hasattr(self, 'decoder_list'):
             model_details_dict['decoder_list'] = self.decoder_list
+
+        if hasattr(self, 'percept_list'):
+            model_details_dict['percept_list'] = self.percept_list
 
         if hasattr(self, 'inputs_shape_list'):
             model_details_dict['inputs_shape_list'] = self.inputs_shape_list

@@ -68,6 +68,7 @@ LIST_ATTRIBUTES = ['graph',
                    'is_variational']
 LIST_MODEL_DETAIL_KEYS = ['encoder_list',
                           'decoder_list',
+                          'percept_list',
                           'inputs_shape_list',
                           'learning_rate',
                           'project_name',
