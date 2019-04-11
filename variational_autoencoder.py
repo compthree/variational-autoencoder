@@ -1361,6 +1361,10 @@ class VariationalAutoencoder(object):
             assert 'percept_list' in model_details_dict
             model_details_dict.pop('percept_list')
 
+        if set(model_details_dict) != set(const.LIST_MODEL_DETAIL_KEYS):
+            print(set(model_details_dict))
+            print(set(const.LIST_MODEL_DETAIL_KEYS))
+
         assert set(model_details_dict) == set(const.LIST_MODEL_DETAIL_KEYS)
 
         # TO DO: check that the value for each key of 'model_details_dict'
