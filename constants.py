@@ -70,7 +70,6 @@ LIST_ATTRIBUTES = ['graph',
                    'decoder_loss']
 LIST_MODEL_DETAIL_KEYS = ['encoder_list',
                           'decoder_list',
-                          'percept_list',
                           'inputs_shape_list',
                           'learning_rate',
                           'project_name',
@@ -81,3 +80,10 @@ LIST_MODEL_DETAIL_KEYS = ['encoder_list',
                           'encoder_loss_weight',
                           'decoder_loss_weight',
                           'is_variational']
+
+PERCEPT_LIST = [{'layer_type': 're-size', 'output_shape': [224, 224], 'loss_weight': 0},
+                {'layer_type': 'convolu', 'kernel_shape': [3, 3], 'output_chann': [64],  'pool_shape': [1, 1], 'activation': 'relu', 'loss_weight': 0.333},
+                {'layer_type': 'convolu', 'kernel_shape': [3, 3], 'output_chann': [64],  'pool_shape': [2, 2], 'activation': 'relu', 'loss_weight': 0},
+                {'layer_type': 'convolu', 'kernel_shape': [3, 3], 'output_chann': [128], 'pool_shape': [1, 1], 'activation': 'relu', 'loss_weight': 0.333},
+                {'layer_type': 'convolu', 'kernel_shape': [3, 3], 'output_chann': [128], 'pool_shape': [2, 2], 'activation': 'relu', 'loss_weight': 0},
+                {'layer_type': 'convolu', 'kernel_shape': [3, 3], 'output_chann': [256], 'pool_shape': [1, 1], 'activation': 'relu', 'loss_weight': 0.333}]
