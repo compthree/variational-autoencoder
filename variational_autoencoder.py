@@ -906,7 +906,7 @@ class VariationalAutoencoder(object):
         # Sum and average together the two components to get the overall loss:
         wgt_enc_loss = tf.multiply(self.encoder_loss_weight, encoder_loss, name = 'weighted_encoder_loss')
         wgt_dec_loss = tf.multiply(self.decoder_loss_weight, decoder_loss, name = 'weighted_decoder_loss')
-        overall_loss = tf.add(encoder_loss, decoder_loss, name = 'combined_loss')
+        overall_loss = tf.add(wgt_enc_loss, wgt_dec_loss, name = 'combined_loss')
         
         # Set the loss as a class attribute:
         object.__setattr__(self, 'encoder_loss', encoder_loss)
