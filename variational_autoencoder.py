@@ -478,7 +478,7 @@ class VariationalAutoencoder(object):
             num_inputs = tf.cast(num_inputs, dtype = tf.float32, name = 'number_of_inputs')
             stddev = tf.sqrt(2 / num_inputs, name = 'fan_in_stddev')
             weight_init = tf.truncated_normal(weight_shape, stddev = stddev, dtype = tf.float32)
-            biases_init = tf.zeros(biases_shape, dtype = tf.float32)
+            biases_init = tf.truncated_normal(biases_shape, stddev = stddev, dtype = tf.float32)
 
         # Create the weights and biases variables:
         weight = tf.get_variable(name  = 'weight_' + tag,
@@ -536,7 +536,7 @@ class VariationalAutoencoder(object):
             num_inputs = tf.cast(num_inputs, dtype = tf.float32, name = 'number_of_inputs')
             stddev = tf.sqrt(2 / num_inputs, name = 'fan_in_stddev')
             kernel_init = tf.truncated_normal(kernel_shape, stddev = stddev, dtype = tf.float32)
-            biases_init = tf.zeros(biases_shape, dtype = tf.float32)
+            biases_init = tf.truncated_normal(biases_shape, stddev = stddev, dtype = tf.float32)
 
         # Create the weights and biases variables:
         kernel = tf.get_variable(name  = 'kernel_' + tag,
@@ -608,7 +608,7 @@ class VariationalAutoencoder(object):
             num_inputs = tf.cast(num_inputs, dtype = tf.float32, name = 'number_of_inputs')
             stddev = tf.sqrt(2 / num_inputs, name = 'fan_in_stddev')
             kernel_init = tf.truncated_normal(kernel_shape, stddev = stddev, dtype = tf.float32)
-            biases_init = tf.zeros(biases_shape, dtype = tf.float32)
+            biases_init = tf.truncated_normal(biases_shape, stddev = stddev, dtype = tf.float32)
         
         # Create the weights and biases variables:
         kernel = tf.get_variable(name  = 'kernel_' + tag,
@@ -839,7 +839,7 @@ class VariationalAutoencoder(object):
 
         '''
 
-        # Compute the loss from the decoder part of the network:
+        # Compute the loss from the decoder subnetwork:
         with tf.variable_scope('decoder_loss', reuse = tf.AUTO_REUSE):
 
             # Compute the perceptual loss:
@@ -865,7 +865,8 @@ class VariationalAutoencoder(object):
                         with tf.variable_scope('layer_loss_' + str(i + 1), reuse = tf.AUTO_REUSE):
                             cut = tf.floordiv(tf.shape(layer)[0], 2)
                             source, reform = tf.split(layer, [cut, cut], axis = 0)
-                            layer_loss = tf.losses.mean_squared_error(source, reform)
+                            layer_loss = tf.reduce_sum(tf.square(source - reform),
+                                                       axis = tf.range(1, tf.rank(source)))
                             layer_wght = tf.divide(layer_dict['loss_weight'], total, name = 'normalized_weight')
                             decoder_loss += tf.multiply(layer_wght, layer_loss, name = 'weighted_layer_loss')
 
@@ -888,31 +889,29 @@ class VariationalAutoencoder(object):
                                               + (1 - self.inputs) * tf.log(1e-10 + 1 - self.output_means), 
                                               axis = tf.range(1, tf.rank(self.output_means)))
 
+            decoder_loss = tf.reduce_mean(decoder_loss)
+
         if not self.is_variational:
-
-            average_loss = tf.reduce_mean(decoder_loss, name = 'mean_combined_loss_over_inputs')
-            object.__setattr__(self, 'loss', average_loss)
-
+            object.__setattr__(self, 'loss', decoder_loss)
             return
 
-        # Compute the loss from the encoder part of the network (KL-divergence):
+        # Compute the loss from the encoder subnetwork (KL-divergence):
         with tf.variable_scope('encoder_loss', reuse = tf.AUTO_REUSE):
             encoder_loss = -0.5 * tf.reduce_sum(1 + self.latent_lstd2
                                                   - tf.square(self.latent_means)
                                                   - tf.exp(self.latent_lstd2),
                                                 axis = tf.range(1, tf.rank(self.latent_lstd2)))
+            encoder_loss = tf.reduce_mean(encoder_loss)
         
         # Sum and average together the two components to get the overall loss:
-        encoder_loss = tf.multiply(self.encoder_loss_weight, encoder_loss, name = 'weighted_encoder_loss')
-        decoder_loss = tf.multiply(self.decoder_loss_weight, decoder_loss, name = 'weighted_decoder_loss')
+        wgt_enc_loss = tf.multiply(self.encoder_loss_weight, encoder_loss, name = 'weighted_encoder_loss')
+        wgt_dec_loss = tf.multiply(self.decoder_loss_weight, decoder_loss, name = 'weighted_decoder_loss')
         overall_loss = tf.add(encoder_loss, decoder_loss, name = 'combined_loss')
-        average_loss = tf.reduce_mean(overall_loss, name = 'mean_combined_loss_over_inputs')
-
-        # # # TO DO: delete this line and uncomment out the above:
-        # average_loss = tf.reduce_mean(decoder_loss, name = 'mean_combined_loss_over_inputs')
         
         # Set the loss as a class attribute:
-        object.__setattr__(self, 'loss', average_loss)
+        object.__setattr__(self, 'encoder_loss', encoder_loss)
+        object.__setattr__(self, 'decoder_loss', decoder_loss)
+        object.__setattr__(self, 'loss', overall_loss)
 
     def _get_tensor_value(self, output_tensor, feed_dict):
 

@@ -65,7 +65,9 @@ LIST_ATTRIBUTES = ['graph',
                    'loss_type',
                    'encoder_loss_weight',
                    'decoder_loss_weight',
-                   'is_variational']
+                   'is_variational',
+                   'encoder_loss',
+                   'decoder_loss']
 LIST_MODEL_DETAIL_KEYS = ['encoder_list',
                           'decoder_list',
                           'percept_list',
