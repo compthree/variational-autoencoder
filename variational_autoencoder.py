@@ -110,8 +110,12 @@ class VariationalAutoencoder(object):
             object.__setattr__(self, 'is_variational', True)
         if self.use_batch_normalization and not hasattr(self, 'averaging_axes_length'):
             object.__setattr__(self, 'averaging_axes_length', 'long')
+        if not self.use_batch_normalization and hasattr(self, 'averaging_axes_length'):
+            object.__delattr__(self, 'averaging_axes_length')
         if self.loss_type == 'perceptual' and not hasattr(self, 'percept_list'):
            object.__setattr__(self, 'percept_list', const.PERCEPT_LIST)
+        if not self.loss_type == 'perceptual' and hasattr(self, 'percept_list'):
+            object.__delattr__(self, 'percept_list')
 
         # Save the model details:
         self.save_model_details()
@@ -1355,11 +1359,15 @@ class VariationalAutoencoder(object):
         if model_details_dict['use_batch_normalization']:
             assert 'averaging_axes_length' in model_details_dict
             model_details_dict.pop('averaging_axes_length')
+        else:
+            assert 'averaging_axes_length' not in model_details_dict
 
         assert 'loss_type' in model_details_dict
         if model_details_dict['loss_type'] == 'perceptual':
             assert 'percept_list' in model_details_dict
             model_details_dict.pop('percept_list')
+        else:
+            assert 'percept_list' not in model_details_dict
 
         if set(model_details_dict) != set(const.LIST_MODEL_DETAIL_KEYS):
             print(set(model_details_dict))
