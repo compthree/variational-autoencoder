@@ -1,4 +1,8 @@
 import os
+
+# Suppress 'INFO' messages from tensorflow:
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '1'
+
 import json
 import time
 import datetime
@@ -8,29 +12,37 @@ import constants as const
 import utils.utils as utils
 
 class VariationalAutoencoder(object):
+
+    # Prevents tensorflow from printing out INFO or WARNING messages:
+    tf.logging.set_verbosity(tf.logging.ERROR)
     
     # A list of class attributes:
     __slots__ = const.LIST_ATTRIBUTES
 
     # Class setter:
-    def __setattr__(self, attr_str, value):
+    def __setattr__(self, attr_name, value):
 
         '''
         
-        Description:
+        Description: class setter that re-instantiates the class if the user
+        changes an attribute that fundamentally alters the class instance.
+        If the attribute to be reset is not from an allowed list, then an
+        exception is raised.
 
         Inputs:
+            -'attr_name' (str) = the name of the attribute to reset.
 
-        Output:
+        Return:
+            -'value' (?) = the value to assign to the attribute.
 
         '''
         
         # We reinitialize the class if any of these attributes are directly changed:
-        if attr_str in ['encoder_list',
+        if attr_name in ['encoder_list',
                         'decoder_list',
                         'inputs_shape_list',
                         'learning_rate']:
-            object.__setattr__(self, attr_str, value)
+            object.__setattr__(self, attr_name, value)
             self.__init__()
             
         # Otherwise, we do not allow the user to (directly) update the attributes:
@@ -38,21 +50,24 @@ class VariationalAutoencoder(object):
             raise NotImplementedError
             
     # Class deleter:
-    def __delattr__(self, attr_str):
+    def __delattr__(self, attr_name):
 
         '''
         
-        Description:
+        Description: class deleter, currently not implemented. As such,
+        it is presently not possible to delete attributes from this class.
 
         Inputs:
+            -'attr_name' (str) = the name of the attribute to delete.
 
-        Output:
+        Return:
+            -None
 
         '''
         
         # We don't allow (direct) deletion of attributes:
-        if attr_str in []:
-            object.__delattr__(self, attr_str)
+        if attr_name in []:
+            object.__delattr__(self, attr_name)
             
         else:
             raise NotImplementedError
@@ -62,11 +77,16 @@ class VariationalAutoencoder(object):
 
         '''
         
-        Description:
+        Description: initializer for the 'VariationalAutoencoder' class.
 
         Inputs:
+            -'model_details_dict' (dict) = input dictionary containing the architecture
+            of the variational autoencoder. We don't give a strict account of the structure
+            that this dictionary must have. Rather, we defer to the examples at the bottom
+            'constants.py'.
 
-        Output:
+        Return:
+            -None
 
         '''
 
@@ -93,7 +113,11 @@ class VariationalAutoencoder(object):
         else:
             self.make_model_path()
 
-        # Include any of these potentially missing class attributes:
+        # By now, we must have the following attributes:
+        for attr_name in ['encoder_list', 'decoder_list', 'inputs_shape_list']:
+            assert hasattr(self, attr_name)
+
+        # Set default values to these class attributes if missing:
         if not hasattr(self, 'learning_rate'):
             object.__setattr__(self, 'learning_rate', 0.001)
         if not hasattr(self, 'num_trained_epochs'):
@@ -175,58 +199,36 @@ class VariationalAutoencoder(object):
             # builder = tf.saved_model.builder.SavedModelBuilder(self.saved_model_path + '_' + self.timestamp)
             # object.__setattr__(self, 'builder', builder)
 
-    # Define the 'model_details_dict' class attribute:
+    # Define the 'model_details_dict' class attribute, for export to a '.json' file:
     @property
     def model_details_dict(self):
 
         model_details_dict = {}
 
-        if hasattr(self, 'encoder_list'):
-            model_details_dict['encoder_list'] = self.encoder_list
+        for attr_name in const.LIST_MODEL_DETAILS_REQUIRED_KEYS + const.LIST_MODEL_DETAILS_OPTIONAL_KEYS:
 
-        if hasattr(self, 'decoder_list'):
-            model_details_dict['decoder_list'] = self.decoder_list
-
-        if hasattr(self, 'percept_list'):
-            model_details_dict['percept_list'] = self.percept_list
-
-        if hasattr(self, 'inputs_shape_list'):
-            model_details_dict['inputs_shape_list'] = self.inputs_shape_list
-
-        if hasattr(self, 'learning_rate'):
-            model_details_dict['learning_rate'] = self.learning_rate
-
-        if hasattr(self, 'project_name'):
-            model_details_dict['project_name'] = self.project_name
-
-        if hasattr(self, 'model_name'):
-            model_details_dict['model_name'] = self.model_name
-
-        if hasattr(self, 'num_trained_epochs'):
-            model_details_dict['num_trained_epochs'] = self.num_trained_epochs
-
-        if hasattr(self, 'use_batch_normalization'):
-            model_details_dict['use_batch_normalization'] = self.use_batch_normalization
-
-        if hasattr(self, 'averaging_axes_length'):
-            model_details_dict['averaging_axes_length'] = self.averaging_axes_length
-
-        if hasattr(self, 'loss_type'):
-            model_details_dict['loss_type'] = self.loss_type
-
-        if hasattr(self,'encoder_loss_weight'):
-            model_details_dict['encoder_loss_weight'] = self.encoder_loss_weight
-
-        if hasattr(self,'decoder_loss_weight'):
-            model_details_dict['decoder_loss_weight'] = self.decoder_loss_weight
-
-        if hasattr(self, 'is_variational'):
-            model_details_dict['is_variational'] = self.is_variational
+            if hasattr(self, attr_name):
+                model_details_dict[attr_name] = object.__getattribute__(self, attr_name)
 
         return model_details_dict
 
     # Enter a new context to start a tensorflow session:
     def __enter__(self):
+
+        '''
+        
+        Description: context launcher that instantiates a tensorflow session,
+        injects a simple input tensor into the graph to determine the shapes
+        of the various layers and set them as class attributes, and loads weights
+        from checkpoint files, if they exist, into the graph.
+
+        Inputs:
+            -None
+
+        Return:
+            -'self'
+
+        '''
         
         # Launch the session:
         sess = tf.Session(graph = self.graph)
@@ -261,6 +263,21 @@ class VariationalAutoencoder(object):
         
     # Exit the context:
     def __exit__(self, exc_type, exc_value, traceback):
+
+        '''
+        
+        Description: exits the context by closing the tensorflow session
+        and resetting the default graph.
+
+        Inputs: (these are standard)
+            -'exc_type' (?) =
+            -'exc_value' (?) =
+            -'traceback' (?) =
+
+        Return:
+            -None
+
+        '''
         
         # Close the session:
         self.sess.close()
@@ -273,16 +290,20 @@ class VariationalAutoencoder(object):
 
         '''
         
-        Description:
+        Description: build the graph for the variational autoencoder network
+        (encoder and decoder).
 
         Inputs:
+            -None
 
-        Output:
+        Return:
+            -None
 
         '''
         
         # Create the encoder:
         with tf.variable_scope('encoder', reuse = tf.AUTO_REUSE):
+            # Center inputs to [-0.5, 0.5] for fan-in weight initialization:
             shifted_inputs = tf.add(self.inputs, -0.5, name = 'shift')
             latent_means, latent_lstd2, latent_stdvs = self._create_subnetwork(shifted_inputs,
                                                                                self.encoder_list)
@@ -304,14 +325,19 @@ class VariationalAutoencoder(object):
         # Create the latent variable sampler subgraph:
         with tf.variable_scope('latent_sample', reuse = tf.AUTO_REUSE):
 
+            # In a variational autoencoder, latent variables are random:
             if self.is_variational:
+
                 # Randomly draw from the latent variable distribution:
                 latent_sample = tf.random_normal(tf.shape(self.latent_means),
                                                  mean = self.latent_means,
                                                  stddev = self.latent_stdvs,
                                                  name = 'latent_sample',
                                                  dtype = tf.float32)
+
+            # In an autoencoder, latent variables are deterministic:
             else:
+
                 # Encoder subnetwork outputs feed directly into the decoder subnetwork:
                 latent_sample = self.latent_means
 
@@ -350,11 +376,18 @@ class VariationalAutoencoder(object):
 
         '''
         
-        Description:
+        Description: builds the graph for a subnetwork, either the encoder or the decoder.
 
         Inputs:
+            -'inputs' (tf.Tensor) = input tensor into the subnetwork.
+            -'layer_list' (list) = list of dictionaries, with the i:th dictionary
+            specifying the structure of the i:th layer. See examples at the bottom
+            of 'constants.py' for valid structures for these dictionaries.
 
-        Output:
+        Return:
+            -'output_means' (tf.Tensor) = tensor of means output from the last layer.
+            -'output_lstd2' (tf.Tensor) = tensor of log-variances output from the last layer.
+            -'output_stdvs' (tf.Tensor) = tensor of standard deviations derived from 'output_lstd2'.
 
         '''
 
@@ -420,11 +453,18 @@ class VariationalAutoencoder(object):
 
         '''
         
-        Description:
+        Description: switch for creating a single layer for a subnetwork (either encoder
+        or decoder) based on what is specified by 'layer_dict'.
+
 
         Inputs:
+            -'inputs' (tf.Tensor) = input tensor to the layer.
+            -'layer_dict' (dict) = dictionary specifying the structure of the layer. See 
+            examples at the bottom of 'constants.py' for valid structures for these dictionaries.
+            -'tag' (str) = tag to use in names of variables appearing in this layer.
 
-        Output:
+        Return:
+            -'output' (tf.Tensor) = the output from this layer.
 
         '''
         
@@ -447,11 +487,15 @@ class VariationalAutoencoder(object):
             elif layer_type == 'reshape':
                 output = self._create_reshape_layer(inputs, layer_dict, tag)
 
+            # Resize layer (for images only):
             elif layer_type == 're-size':
                 output = self._create_re_size_layer(inputs, layer_dict, tag)
 
+            # We did not specify a valid layer type:
             else:
-                raise Exception('Layer type {} must be, but is not one of, "convolu", "deconvo", "full_cn", "reshape", or "re-size".'.format(layer_type))
+                exception = 'Layer type {} must be, but is not one of, "convolu", \
+                            "deconvo", "full_cn", "reshape", or "re-size".'.format(layer_type)
+                raise Exception(exception)
 
         return output        
 
@@ -459,11 +503,20 @@ class VariationalAutoencoder(object):
 
         '''
 
-        Description:
+        Description: creates a single fully-connected layer:
+            1. weight multiplication
+            2. add biases
+            3. activation
+        Batch-normalization is optional.
 
         Inputs:
+            -'inputs' (tf.Tensor) = input tensor to the layer.
+            -'layer_dict' (dict) = dictionary specifying the structure of the layer. See 
+            examples at the bottom of 'constants.py' for a valid structure for this dictionary.
+            -'tag' (str) = tag to use in names of variables appearing in this layer.
 
-        Output:
+        Return:
+            -'output' (tf.Tensor) = the output from this layer.
 
         '''
         
@@ -481,10 +534,9 @@ class VariationalAutoencoder(object):
         # Initialize the weights and biases using the 'fan-in' method:
         with tf.variable_scope('variable_init', reuse = tf.AUTO_REUSE):
             num_inputs = tf.reduce_prod(inputs_shape[1:])
-            num_inputs = tf.cast(num_inputs, dtype = tf.float32, name = 'number_of_inputs')
-            stddev = tf.sqrt(2 / num_inputs, name = 'fan_in_stddev')
-            weight_init = tf.truncated_normal(weight_shape, stddev = stddev, dtype = tf.float32)
-            biases_init = tf.truncated_normal(biases_shape, stddev = stddev, dtype = tf.float32)
+            weight_init, biases_init = self._get_fan_in_init(num_inputs,
+                                                             weight_shape,
+                                                             biases_shape)
 
         # Create the weights and biases variables:
         weight = tf.get_variable(name  = 'weight_' + tag,
@@ -521,10 +573,16 @@ class VariationalAutoencoder(object):
             2. add biases
             3. activation
             4. max-pool
+        Batch-normalization is optional.
 
         Inputs:
+            -'inputs' (tf.Tensor) = input tensor to the layer.
+            -'layer_dict' (dict) = dictionary specifying the structure of the layer. See 
+            examples at the bottom of 'constants.py' for a valid structure for this dictionary.
+            -'tag' (str) = tag to use in names of variables appearing in this layer.
 
-        Output:
+        Return:
+            -'output' (tf.Tensor) = the output from this layer.
 
         '''
         
@@ -539,10 +597,9 @@ class VariationalAutoencoder(object):
         # Initialize the weights and biases using the 'fan-in' method:
         with tf.variable_scope('variable_init', reuse = tf.AUTO_REUSE):
             num_inputs = tf.reduce_prod(kernel_shape[:-1])
-            num_inputs = tf.cast(num_inputs, dtype = tf.float32, name = 'number_of_inputs')
-            stddev = tf.sqrt(2 / num_inputs, name = 'fan_in_stddev')
-            kernel_init = tf.truncated_normal(kernel_shape, stddev = stddev, dtype = tf.float32)
-            biases_init = tf.truncated_normal(biases_shape, stddev = stddev, dtype = tf.float32)
+            kernel_init, biases_init = self._get_fan_in_init(num_inputs,
+                                                             kernel_shape,
+                                                             biases_shape)
 
         # Create the weights and biases variables:
         kernel = tf.get_variable(name  = 'kernel_' + tag,
@@ -585,10 +642,16 @@ class VariationalAutoencoder(object):
             2. "transpose" convolution
             3. add biases
             4. activation
+        Batch-normalization is optional.
 
         Inputs:
+            -'inputs' (tf.Tensor) = input tensor to the layer.
+            -'layer_dict' (dict) = dictionary specifying the structure of the layer. See 
+            examples at the bottom of 'constants.py' for a valid structure for this dictionary.
+            -'tag' (str) = tag to use in names of variables appearing in this layer.
 
-        Output:
+        Return:
+            -'output' (tf.Tensor) = the output from this layer.
 
         '''
 
@@ -611,10 +674,9 @@ class VariationalAutoencoder(object):
         # Initialize the weights and biases using the 'fan-in' method:
         with tf.variable_scope('variable_init', reuse = tf.AUTO_REUSE):
             num_inputs = tf.reduce_prod(kernel_shape[:-2] + kernel_shape[-1:])
-            num_inputs = tf.cast(num_inputs, dtype = tf.float32, name = 'number_of_inputs')
-            stddev = tf.sqrt(2 / num_inputs, name = 'fan_in_stddev')
-            kernel_init = tf.truncated_normal(kernel_shape, stddev = stddev, dtype = tf.float32)
-            biases_init = tf.truncated_normal(biases_shape, stddev = stddev, dtype = tf.float32)
+            kernel_init, biases_init = self._get_fan_in_init(num_inputs,
+                                                             kernel_shape,
+                                                             biases_shape)
         
         # Create the weights and biases variables:
         kernel = tf.get_variable(name  = 'kernel_' + tag,
@@ -649,16 +711,15 @@ class VariationalAutoencoder(object):
         '''
 
         Description: an n-dimensional version of the unpooling operation from
-        https://www.robots.ox.ac.uk/~vgg/rg/papers/Dosovitskiy_Learning_to_Generate_2015_CVPR_paper.pdf
-
-        Borrowed from "https://github.com/tensorflow/tensorflow/issues/2169".
+        https://www.robots.ox.ac.uk/~vgg/rg/papers/Dosovitskiy_Learning_to_Generate_2015_CVPR_paper.pdf.
+        Adapted from code posted at "https://github.com/tensorflow/tensorflow/issues/2169".
 
         Inputs:
             -'inputs' (tf.Tensor) = a tensor of shape [batch, d_0, d_1, ..., d_n, channels]
-            -'window_shape' = a list of positive integers [m_0, m_1, ..., m_n].
+            -'window_shape' (list) = a list of positive integers [m_0, m_1, ..., m_n].
 
-        Output:
-            - (tf.Tensor) = a tensor of shape [batch, d0 * m_0, d1 * m_1, ..., d_n * m_n, channels]
+        Return:
+            -'output' (tf.Tensor) = a tensor of shape [batch, d0 * m_0, d1 * m_1, ..., d_n * m_n, channels].
 
         '''
         
@@ -682,12 +743,17 @@ class VariationalAutoencoder(object):
     def _create_reshape_layer(self, inputs, layer_dict, tag):
 
         '''
-        
-        Description:
+
+        Description: reshapes the tensor to whatever shape is specified in 'layer_dict'.
 
         Inputs:
+            -'inputs' (tf.Tensor) = input tensor to the layer.
+            -'layer_dict' (dict) = dictionary specifying how to reshape 'inputs'. See 
+            examples at the bottom of 'constants.py' for a valid structure for this dictionary.
+            -'tag' (str) = tag to use in names of variables appearing in this layer.
 
-        Output:
+        Return:
+            -'output' (tf.Tensor) = the output from this layer.
 
         '''
 
@@ -708,11 +774,17 @@ class VariationalAutoencoder(object):
 
         '''
         
-        Description:
+        Description: re-sizes the tensor to whatever size is specified in 'layer_dict'.
+        Used only for image data.
 
         Inputs:
+            -'inputs' (tf.Tensor) = input tensor to the layer.
+            -'layer_dict' (dict) = dictionary specifying how to re-size 'inputs'. See 
+            examples at the bottom of 'constants.py' for a valid structure for this dictionary.
+            -'tag' (str) = tag to use in names of variables appearing in this layer.
 
-        Output:
+        Return:
+            -'output' (tf.Tensor) = the output from this layer.
 
         '''
 
@@ -727,11 +799,14 @@ class VariationalAutoencoder(object):
 
         '''
         
-        Description:
+        Description: returns the activation function specified for use by 'layer_dict'.
 
         Inputs:
+            -'layer_dict' (dict) = dictionary specifying the structure of the layer. See 
+            examples at the bottom of 'constants.py' for a valid structure for this dictionary.
 
-        Output:
+        Return:
+            -'activation' (tf function) = tensorflow activation function.
 
         '''
     
@@ -750,23 +825,68 @@ class VariationalAutoencoder(object):
         else:
             raise Exception('Activation must be one of "relu", "sigmoid", or "identity".')
 
+    def _get_fan_in_init(self, num_inputs, weight_shape, biases_shape):
+
+        '''
+        
+        Description: uses the He et al. 'fan-in' method for weight and bias initialization.
+
+        Inputs:
+            -'num_inputs' (tf.Tensor) = the number of input units to each node of the
+            present layer.
+            -'weight_shape' (list) = the shape of the weight tensor used in the present layer.
+            -'biases_shape' (list) = the shape of the biases tensor used in the present layer.
+
+        Return:
+            -'weight_init' (tf.Tensor) = tensor of normal-distributed initialzed values for 'weight' tensor.
+            -'biases_init' (tf.Tensor) = tensor of normal-distributed initialzed values for 'biases' tensor.
+
+        '''
+
+        # The essence of He initialization is to use the following standard deviation:
+        num_inputs = tf.cast(num_inputs, dtype = tf.float32, name = 'number_of_inputs')
+        stddev = tf.sqrt(2 / num_inputs, name = 'fan_in_stddev')
+        weight_init = tf.truncated_normal(weight_shape, stddev = stddev, dtype = tf.float32)
+        biases_init = tf.truncated_normal(biases_shape, stddev = stddev, dtype = tf.float32)
+
+        return weight_init, biases_init
+
     def _perform_batch_normalization(self,
                                      inputs,
                                      train_decay = 0.99,
                                      averaging_axes_length = 'long'):
 
-        '''Adopted from https://r2rt.com/implementing-batch-normalization-in-tensorflow.html'''
+        '''
+        
+        Description: inserts a batch-normalization layer.
+        Adopted from https://r2rt.com/implementing-batch-normalization-in-tensorflow.html.
+
+        Inputs:
+            -'inputs' (tf.Tensor) = input tensor to the layer.
+            -'train_decay' (float) = weight used for adjusting the population mean
+            estimate with each iteration by moving average.
+            -'averaging_axes_length' (str) = may be either of
+                -'long'  --> average over all spatial dimensions of 'inputs'.
+                -'short' --> average over each spatial dimension of 'inputs' separately.
+
+        Return:
+            -'output' (tf.Tensor) = the output from this layer.
+
+        '''
 
         # Prevent overflow from dividing by a batch variance of zero:
         epsilon = 1e-3
 
         # Two possible ways to average over datapoint features in a batch:
         if averaging_axes_length == 'long':
+
             # Average over all but the last 'channel' dimension of 'inputs':
             cutoff = len(inputs.get_shape().as_list()) - 1
+
         else:
-            assert averaging_axes_length == 'short'
+
             # Average over only the 'batch' dimension of 'inputs':
+            assert averaging_axes_length == 'short'
             cutoff = 1
 
         # Get or initialize the shift and scale variables for batch normalization:
@@ -796,8 +916,8 @@ class VariationalAutoencoder(object):
         # Get the mean and variance of all datapoints in this batch:
         batch_mean, batch_std2 = tf.nn.moments(inputs, axes = list(range(cutoff)))
 
-        # The 'decay' factor must be one during inference so we do not change the estimates
-        # of the population mean and std2 for use in the batch normalization sub-layer:
+        # Set the 'decay' factor. This factor must be one during inference so we do not change 
+        # the estimates of the population mean and std2 for use in the batch normalization sub-layer:
         with tf.variable_scope('set_decay_weight', reuse = tf.AUTO_REUSE):
             decay = tf.cond(self.is_training,
                             lambda: train_decay, # Return if training.
@@ -841,7 +961,7 @@ class VariationalAutoencoder(object):
 
         Inputs:
 
-        Output:
+        Return:
 
         '''
 
@@ -897,6 +1017,7 @@ class VariationalAutoencoder(object):
 
             decoder_loss = tf.reduce_mean(decoder_loss)
 
+        # If we are using an autoencoder, then we only have the decoder loss:
         if not self.is_variational:
             object.__setattr__(self, 'loss', decoder_loss)
             return
@@ -917,31 +1038,38 @@ class VariationalAutoencoder(object):
         # Set the loss as a class attribute:
         object.__setattr__(self, 'encoder_loss', encoder_loss)
         object.__setattr__(self, 'decoder_loss', decoder_loss)
-        object.__setattr__(self, 'loss', overall_loss)
+        object.__setattr__(self, 'loss',         overall_loss)
 
-    def _get_tensor_value(self, output_tensor, feed_dict):
+    def _get_tensor_value(self, output, feed_dict):
 
         '''
         
-        Description:
-
+        Description: evaluates the 'output' tensor using input data from 'feed_dict'.
+            
         Inputs:
+            -'output' (tf.Tensor) = the 'output' tensor to evaluate.
+            -'feed_dict' (dict) = input data used to evaluate 'output'.
 
-        Output:
+        Return:
+            -'output' (np.ndarray) = numerical values of the evaluted 'output' tensor.
 
         '''
         
-        return self.sess.run(output_tensor, feed_dict = feed_dict)
+        return self.sess.run(output, feed_dict = feed_dict)
     
     def update_network(self, input_data):
 
         '''
         
-        Description:
+        Description: run the optimizer and evaluate the loss with mini-batch 'input_data'.
 
         Inputs:
+            -'input_data' (np.ndarray) = the mini-batch input data used for the
+            optimization step.
 
-        Output:
+        Return:
+            -loss (float) = the value of the loss, evaluated over mini-batch 'input_data'
+            after optimization.
 
         '''
         
@@ -958,69 +1086,87 @@ class VariationalAutoencoder(object):
 
         '''
         
-        Description:
+        Description: train the model using the 'input_data' as training data.
+        Training automatically picks up from whatever is recorded for
+        'num_training_epochs' in 'model_details.json', using weights loaded
+        from the checkpoint files.
 
         Inputs:
+            -'input_data' (np.ndarray) = the training data.
+            -'batch_size' (int) = the number of datapoints in each mini-batch.
+            -'display_step' (int) = the skip step for training progress printouts.
+            -'num_training_epochs' (int) = the number of training epochs.
 
-        Output:
+        Return:
+            -None
 
         '''
         
+        # Compute the number of mini-batches per epoch:
         num_samples = len(input_data)
+        num_batches_per_epoch = int(num_samples / batch_size)
     
+        # For printing out progress updates:
         print_start = time.time()
+
+        # Begin training from where we left off (initialized to 0 or
+        # pulled from 'model_details.json' from a previous training session).
         epoch_begin = self.num_trained_epochs
+
+        # Begin training:
         for epoch in range(epoch_begin, num_training_epochs):
 
+            # For printing out progress updates:
             epoch_start = time.time()
 
+            # Initialize the average loss over mini-batches for this epoch to 0:
             avg_loss = 0.
-            num_batches_per_epoch = int(num_samples / batch_size)
             
             # Loop over all batches
             for i in range(num_batches_per_epoch):
 
-                # Get the data batch:
+                # Get the data mini-batch:
                 data_batch = input_data[i * batch_size: (i + 1) * batch_size]
 
-                # Fit training using batch data:
+                # Fit training using mini-batch data:
                 loss = self.update_network(data_batch)
 
-                # Compute average loss
+                # Update the average loss
                 avg_loss += loss * (batch_size / num_samples)
 
-                # Check that the loss is not diverging:
-                # print('loss:', loss)
-                # print('encode:', self.encode(input_data[:1]))
-
+            # Set 'avg_loss' and 'num_trained_epochs' as class attributes:
             object.__setattr__(self, 'avg_loss', avg_loss)
             object.__setattr__(self, 'num_trained_epochs', self.num_trained_epochs + 1)
 
-            # Print out progress and save model checkpoint:
+            # Print out progress and save a model checkpoint:
             if (epoch + 1) % display_step == 0:
                 
+                # Print out progress:
                 delta = round(time.time() - print_start, 3)
                 print_out = 'Epoch {} of {} completed. Total time elapsed so far: {}'
                 print_out = print_out.format(epoch + 1, num_training_epochs, delta)
-                
                 print('\n')
                 print(print_out)
                 print('-' * len(print_out))
                 print('Loss over all input data:', round(self.avg_loss, 3))
                 print('Time to train last epoch:', round(time.time() - epoch_start, 3))
 
-                # Save the model weights:
+                # Save the model weights in checkpoint files:
                 self.save_model()
     
     def encode(self, input_data):
 
         '''
         
-        Description:
+        Description: evaluate the tensors 'self.latent_means' and 'self.latent_stdvs' using
+        the values of 'input_data'.
 
         Inputs:
+            -'input_data' (np.ndarray) = input data values.
 
-        Output:
+        Return:
+            -'latent_means' (np.ndarray) = the means output from the encoder network.
+            -'latent_stdvs' (np.ndarray) = the standard deviations output from the encoder network.
 
         '''
         
@@ -1031,14 +1177,18 @@ class VariationalAutoencoder(object):
 
         '''
         
-        Description:
+        Description: evaluate the tensors 'self.output_means' using the values of 'latent_sample', 
+        the latent variable values generated from random sampling.
 
         Inputs:
+            -'latent_sample' (np.ndarray) = latent variable input values.
 
-        Output:
+        Return:
+            -'output_means' (np.ndarray) = the means output from the decoder network.
 
         '''
         
+        # If no sample value for the latent variables is provided, we generate it randomly:
         if latent_sample is None:
             latent_sample = np.random.normal(size = [1] + list(self.get_latent_shape()))
 
@@ -1049,31 +1199,34 @@ class VariationalAutoencoder(object):
 
         '''
         
-        Description:
+        Description: evaluate the tensors 'self.output_sample' using the values of 'input_data'.
+        In other words, this reconstructs 'input_data' by passing it through the whole network.
 
         Inputs:
+            -'input_data' (np.ndarray) = input data values.
 
-        Output:
+        Return:
+            -'output_means' (np.ndarray) = the means output from the decoder network.
 
         '''
+
         feed_dict = {self.inputs: input_data}
         return self._get_tensor_value(self.output_sample, feed_dict)
-    
-    def restore_model(self):
-
-        '''
-        
-        Description:
-
-        Inputs:
-
-        Output:
-
-        '''
-        
-        self.saver.restore(self.sess, self.save_path)
 
     def check_tensor_rank(self, tensor, rank_list):
+
+        '''
+        
+        Description: checks the rank of 'tensor' is among those in 'rank_list'.
+
+        Inputs:
+            -tensor (tf.Tensor) = a tensorflow tensor, whose rank is to be checked.
+            -rank_list (list) = a list of acceptable ranks for 'tensor'.
+
+        Return:
+            -None
+
+        '''
 
         assert len(tensor.get_shape().as_list()) in rank_list
         
@@ -1081,19 +1234,26 @@ class VariationalAutoencoder(object):
 
         '''
         
-        Description:
+        Description: gets the shape of 'input_data'. (This method is used
+        only for setting this shape as a class attribute.)
 
         Inputs:
+            -'input_data' (np.ndarray) = the input data whose shape is to be
+            determined.
 
-        Output:
+        Return:
+            -(np.ndarray) = the shape of 'input_data'.
 
         '''
 
+        # If no input data is provided, then feed the graph with an array
+        # of zeros to get the shape of 'input_data', and ignore the 'batch' dimension:
         if input_data is None:
 
             feed_dict = {self.inputs: np.zeros([1] + self.inputs_shape_list)}
             return self._get_tensor_value(self._inputs_shape, feed_dict)[1:]
         
+        # Otherwise, feed the graph to determine the shape of 'input_data':
         feed_dict = {self.inputs: input_data}
         return self._get_tensor_value(self._inputs_shape, feed_dict)
     
@@ -1101,19 +1261,25 @@ class VariationalAutoencoder(object):
 
         '''
         
-        Description:
+        Description: gets the shape of tensors in the latent space output by the encoder
+        by feeding 'input_data' into the graph.
 
         Inputs:
+            -'input_data' (np.ndarray) = the input data used to determine this shape.
 
-        Output:
+        Return:
+            -(np.ndarray) = the shape of tensors in the latent space.
 
         '''
 
+        # If no input data is provided, then feed the graph with an array
+        # of zeros to get the shape, and ignore the 'batch' dimension:
         if input_data is None:
 
             feed_dict = {self.inputs: np.zeros([1] + self.inputs_shape_list)}
             return self._get_tensor_value(self._latent_shape, feed_dict)[1:]
         
+        # Otherwise, feed the input data into the graph to determine the shape:
         feed_dict = {self.inputs: input_data}
         return self._get_tensor_value(self._latent_shape, feed_dict)
     
@@ -1121,19 +1287,25 @@ class VariationalAutoencoder(object):
 
         '''
         
-        Description:
+        Description: gets the shape of tensors in the output space of the decoder
+        by feeding 'input_data' into the graph.
 
         Inputs:
+            -'input_data' (np.ndarray) = the input data used to determine this shape.
 
-        Output:
+        Return:
+            -(np.ndarray) = the shape of tensors in the output space of the decoder.
 
         '''
 
+        # If no input data is provided, then feed the graph with an array
+        # of zeros to get the shape, and ignore the 'batch' dimension:
         if input_data is None:
 
             feed_dict = {self.inputs: np.zeros([1] + self.inputs_shape_list)}
             return self._get_tensor_value(self._output_shape, feed_dict)[1:]
         
+        # Otherwise, feed the input data into the graph to determine the shape:
         feed_dict = {self.inputs: input_data}
         return self._get_tensor_value(self._output_shape, feed_dict)
     
@@ -1141,19 +1313,26 @@ class VariationalAutoencoder(object):
 
         '''
         
-        Description:
+        Description: get the shapes of all layers in the network (encoder and decoder)
+        by feeding 'input_data' into the graph.
 
         Inputs:
+        -'input_data' (np.ndarray) = the input data used to determine the shapes.
 
-        Output:
+        Return:
+        -(list) = the list of all layer shapes, in the order that they are stacked
+        in the network.
 
         '''
 
+        # If no input data is provided, then feed the graph with an array
+        # of zeros to get the layer shapes, and ignore the 'batch' dimension:
         if input_data is None:
 
             feed_dict = {self.inputs: np.zeros([1] + self.inputs_shape_list)}
             return [x[1:] for x in self._get_tensor_value(self._layer_shape_list, feed_dict)]
 
+        # Otherwise, feed the input data into the graph to determine the layer shapes:
         feed_dict = {self.inputs: input_data}
         return self._get_tensor_value(self._layer_shape_list, feed_dict)
 
@@ -1161,19 +1340,26 @@ class VariationalAutoencoder(object):
 
         '''
         
-        Description:
+        Description: get the shapes of all layers in the encoder subnetwork
+        by feeding 'input_data' into the graph.
 
         Inputs:
+        -'input_data' (np.ndarray) = the input data used to determine the shapes.
 
-        Output:
+        Return:
+        -(list) = the list of all layer shapes, in the order that they are stacked
+        in the encoder subnetwork.
 
         '''
 
+        # If no input data is provided, then feed the graph with an array
+        # of zeros to get the encoder layer shapes, and ignore the 'batch' dimension:
         if input_data is None:
 
             feed_dict = {self.inputs: np.zeros([1] + self.inputs_shape_list)}
             return [x[1:] for x in self._get_tensor_value(self._encoder_shape_list, feed_dict)]
         
+        # Otherwise, feed the input data into the graph to determine the encoder layer shapes:
         feed_dict = {self.inputs: input_data}
         return self._get_tensor_value(self._encoder_shape_list, feed_dict)
         
@@ -1181,19 +1367,26 @@ class VariationalAutoencoder(object):
 
         '''
         
-        Description:
+        Description: get the shapes of all layers in the decoder subnetwork
+        by feeding 'input_data' into the graph.
 
         Inputs:
+        -'input_data' (np.ndarray) = the input data used to determine the shapes.
 
-        Output:
+        Return:
+        -(list) = the list of all layer shapes, in the order that they are stacked
+        in the decoder subnetwork.
 
         '''
 
+        # If no input data is provided, then feed the graph with an array
+        # of zeros to get the decoder layer shapes, and ignore the 'batch' dimension:
         if input_data is None:
 
             feed_dict = {self.inputs: np.zeros([1] + self.inputs_shape_list)}
             return [x[1:] for x in self._get_tensor_value(self._decoder_shape_list, feed_dict)]
         
+        # Otherwise, feed the input data into the graph to determine the decoder layer shapes:
         feed_dict = {self.inputs: input_data}
         return self._get_tensor_value(self._decoder_shape_list, feed_dict)
 
@@ -1201,22 +1394,31 @@ class VariationalAutoencoder(object):
 
         '''
         
-        Description:
+        Description: if using perceptual loss ("self.loss == 'perceptual'"), get
+        the shapes of all layers in the perceptual subnetwork by feeding 'input_data'
+        into the graph.
 
         Inputs:
+        -'input_data' (np.ndarray) = the input data used to determine the shapes.
 
-        Output:
+        Return:
+        -(list) = the list of all layer shapes, in the order that they are stacked
+        in the perceptual subnetwork.
 
         '''
 
+        # Skip if there is no perceptual subnetwork:
         if not hasattr(self, '_percept_shape_list'):
             return []
 
+        # If no input data is provided, then feed the graph with an array
+        # of zeros to get the perceptual layer shapes, and ignore the 'batch' dimension:
         if input_data is None:
 
             feed_dict = {self.inputs: np.zeros([1] + self.inputs_shape_list)}
             return [x[1:] for x in self._get_tensor_value(self._percept_shape_list, feed_dict)]
         
+        # Otherwise, feed the input data into the graph to determine the perceptual layer shapes:
         feed_dict = {self.inputs: input_data}
         return self._get_tensor_value(self._percept_shape_list, feed_dict)
 
@@ -1224,11 +1426,13 @@ class VariationalAutoencoder(object):
 
         '''
         
-        Description:
+        Description: set the path to the project as a class attribute.
 
         Inputs:
+            -None
 
-        Output:
+        Return:
+            -None
 
         '''
 
@@ -1239,11 +1443,14 @@ class VariationalAutoencoder(object):
 
         '''
         
-        Description:
+        Description: set the path to the 'models' directory for this project
+        as a class attribute.
 
         Inputs:
+            -None
 
-        Output:
+        Return:
+            -None
 
         '''
 
@@ -1255,11 +1462,15 @@ class VariationalAutoencoder(object):
 
         '''
         
-        Description:
+        Description: set the path to the model used by this instance of
+        'VariationalAutoencoder'. (The name of the model is given by
+        'model_details_dict[model_name]' during class instantiation.)
 
         Inputs:
+            -None
 
-        Output:
+        Return:
+            -None
 
         '''
 
@@ -1273,27 +1484,33 @@ class VariationalAutoencoder(object):
 
         '''
         
-        Description:
+        Description: set the path to 'model_details.json', which stores all
+        structure and training details of the model used by this instance of
+        'VariationalAutoencoder'.
 
         Inputs:
+            -None
 
-        Output:
+        Return:
+            -None
 
         '''
 
         self.set_model_path()
-        model_details_path = os.path.join(self.model_path, const.MODEL_DETAILS)
+        model_details_path = os.path.join(self.model_path, const.FILE_MODEL_DETAILS)
         object.__setattr__(self, 'model_details_path', model_details_path)
 
     def make_project_path(self):
 
         '''
         
-        Description:
+        Description: creates the project directory if it does not exist. 
 
         Inputs:
+            -None
 
-        Output:
+        Return:
+            -None
 
         '''
 
@@ -1305,11 +1522,14 @@ class VariationalAutoencoder(object):
 
         '''
         
-        Description:
+        Description: creates the 'models' directory for this project if
+        it does not exist. 
 
         Inputs:
+            -None
 
-        Output:
+        Return:
+            -None
 
         '''
 
@@ -1322,11 +1542,14 @@ class VariationalAutoencoder(object):
 
         '''
         
-        Description:
+        Description: creates a directory for the present model if it does
+        not exist. This directory is timestamped to avoid conflicts.
 
         Inputs:
+            -None
 
-        Output:
+        Return:
+            -None
 
         '''
 
@@ -1345,38 +1568,69 @@ class VariationalAutoencoder(object):
 
         '''
         
-        Description:
+        Description: checks that 'self.model_details_dict' has an acceptable
+        format. Examples of acceptable formats are found at the bottom of
+        'constants.py'.
 
         Inputs:
+            -None
 
-        Output:
+        Return:
+            -None
 
         '''
 
+        # We need to modify this dictionary slightly before performing
+        # checks, so we create a copy:
         model_details_dict = dict(self.model_details_dict)
 
-        assert 'use_batch_normalization' in model_details_dict
-        if model_details_dict['use_batch_normalization']:
-            assert 'averaging_axes_length' in model_details_dict
-            model_details_dict.pop('averaging_axes_length')
-        else:
-            assert 'averaging_axes_length' not in model_details_dict
+        # In 'self.model_details_dict', if the i:th key of 'key_list_1' has
+        # the i:th value in 'value_list', then 'self.model_details_dict' must
+        # contain the i:th key in 'key_list_2'. Otherwise, 'self.model_details_dict'
+        # must not contain the i:th key in 'key_list_2'.
+        key_list_1 = ['use_batch_normalization', 'loss_type']
+        key_list_2 = ['averaging_axes_length', 'percept_list']
+        value_list = [True, 'perceptual']
+        for key_1, key_2, value in zip(key_list_1, key_list_2, value_list):
+            if model_details_dict[key_1] == value:
+                if key_2 not in model_details_dict:
+                    exception = 'model_details_dict has the key-value pair "' + str(key_1) + ': ' + str(value) + '". ' \
+                    + 'It must therefore contain the key "' + str(key_2) + '", but does not.'
+                    raise Exception(exception)
+                model_details_dict.pop(key_2)
+            else:
+                if key_2 in model_details_dict:
+                    exception = 'model_details_dict does not have the key-value pair "' + str(key_1) + ': ' + str(value) + '". ' \
+                    + 'It must therefore not contain the key "' + str(key_2) + '", but does.'
+                    raise Exception(exception)
 
-        assert 'loss_type' in model_details_dict
-        if model_details_dict['loss_type'] == 'perceptual':
-            assert 'percept_list' in model_details_dict
-            model_details_dict.pop('percept_list')
-        else:
-            assert 'percept_list' not in model_details_dict
+        # Check that 'self.model_details_dict' contains all of the required keys:
+        if set(model_details_dict) != set(const.LIST_MODEL_DETAILS_REQUIRED_KEYS):
 
-        if set(model_details_dict) != set(const.LIST_MODEL_DETAIL_KEYS):
-            print(set(model_details_dict))
-            print(set(const.LIST_MODEL_DETAIL_KEYS))
+            flag = False
 
-        assert set(model_details_dict) == set(const.LIST_MODEL_DETAIL_KEYS)
+            exception = 'The following keys should not be present in "model_details_dict":\n'
+            for key in model_details_dict:
+                if key not in const.LIST_MODEL_DETAILS_REQUIRED_KEYS:
+                    exception += '\t\t-' + key + '\n'
+                    flag = True
+            if flag:
+                raise Exception(exception)
 
-        # TO DO: check that the value for each key of 'model_details_dict'
-        # is the correct datetype and has the correct format.
+            exception = 'The following keys must be present in "model_details_dict" but are missing:\n'
+            for key in const.LIST_MODEL_DETAILS_REQUIRED_KEYS:
+                if key not in model_details_dict:
+                    exception += '\t\t-' + key + '\n'
+                    flag = True
+            if flag:
+                raise Exception(exception)
+
+            print(model_details_dict)
+            raise Exception('Something is incorrect about the structure of model_details_dict. See above.')
+
+
+        # TO DO: use schema package to check that the value for each key of
+        # 'model_details_dict' is the correct datetype and has the correct format.
 
         # Also, check that the decoder means layer is an int between 0 and 1:
 
@@ -1386,26 +1640,39 @@ class VariationalAutoencoder(object):
 
         '''
         
-        Description:
+        Description: loads 'model_details_dict' from 'model_details.json' if
+        a model by the name given at the end of 'self.model_path' exists. Raises
+        and exception if values in the loaded 'model_details_dict' conflict with
+        values already found in 'self.model_details_dict.'
 
         Inputs:
+            -None
 
-        Output:
+        Return:
+            -None
 
         '''
 
         with open(self.model_details_path) as file_handle:
 
+            # Load the saved model details:
             loaded_model_details_dict = json.load(file_handle)
 
+            # For each key in both 'loaded_model_details_dict' and
+            # 'self.model_details_dict', check that their corresponding
+            # values match:
             for key in loaded_model_details_dict:
 
+                # Skip this key if it is not in both dictionaries:
                 if key not in self.model_details_dict:
                     continue
 
+                # Ignore the number of trained epochs. We'll use the value stored
+                # in 'loaded_model_details_dict' when we resume training.
                 if key == 'num_trained_epochs':
                     continue
 
+                # Raise an exception if the value of this key does not match between dictionaries:
                 if self.model_details_dict[key] != loaded_model_details_dict[key]:
                     exception = 'The "input model details dict" does not equal ' \
                     + 'the "loaded model details dict" at the key "{}": '.format(key) \
@@ -1417,6 +1684,7 @@ class VariationalAutoencoder(object):
                     + '"{}" because a model by that name already exists.'.format(self.model_name)
                     raise Exception(exception)
 
+            # Set each key, value pair in 'loaded_model_details_dict' as a class attribute:
             for key in loaded_model_details_dict:
                 object.__setattr__(self, key, loaded_model_details_dict[key])
             self.check_model_details_dict_format()
@@ -1425,16 +1693,20 @@ class VariationalAutoencoder(object):
 
         '''
         
-        Description:
+        Description: save 'self.model_details_dict' in 'model_details.json'.
 
         Inputs:
+            -None
 
-        Output:
+        Return:
+            -None
 
         '''
 
+        # Check that the format of 'self.model_details_dict' is correct:
         self.check_model_details_dict_format()
 
+        # Save 'self.model_details_dict' in 'model_details.json':
         with open(self.model_details_path, 'w+') as file_handle:
             json.dump(self.model_details_dict, file_handle, default = utils.default)
 
@@ -1442,11 +1714,13 @@ class VariationalAutoencoder(object):
 
         '''
         
-        Description:
+        Description: load weights and checkpoint files from a previously trained model.
 
         Inputs:
+            -None
 
-        Output:
+        Return:
+            -None
 
         '''
 
@@ -1459,11 +1733,13 @@ class VariationalAutoencoder(object):
 
         '''
         
-        Description:
+        Description: save weights and checkpoint files from the presently trained model.
 
         Inputs:
+            -None
 
-        Output:
+        Return:
+            -None
 
         '''
 
@@ -1475,36 +1751,67 @@ class VariationalAutoencoder(object):
 
     def load_initial_loss_weights(self, weight_dict):
 
+        '''
+        
+        Description: if "self.loss_type == 'perceptual'", then loads weights from the
+        pretrained 'vgg16' convolution neural network for the perceptual loss function,
+        and assign these values to the weights of the perceptual loss subnetwork.
+        See 'const.PERCEPT_LIST' to learn the structure of the part of vgg16 that we
+        use here. Weights can be found here: "https://www.cs.toronto.edu/~frossard/post/vgg16/".
+        Note: the code written here is taylored to work with the weights found and the
+        above website. It will need to be retooled to load weights from files with different
+        formatting.
+
+        Inputs:
+            -'weight_dict' (dict) = dictionary of layer weights and biases. Obtained
+            for example by doing 'weights = np.load("path/to/weights.npz")'.
+
+        Return:
+            -None
+
+        '''
+
+        # Don't load the weights if we are not using perceptual loss:
         if self.loss_type == 'pixel':
             pass
 
+        # Get a list of all variable names in the decoder part of the loss function:
         var_list = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope = 'loss_function/decoder_loss')
         var_name_list = [''.join(var.name.split(':0')[:-1]) for var in var_list]
 
+        # Get a list of all variable names in the vgg16 network ('W' --> 'weights', 'b' --> 'biases').
         input_weight_name_list = sorted([x for x in sorted(weight_dict.keys()) if x.endswith('W')])
         input_biases_name_list = sorted([x for x in sorted(weight_dict.keys()) if x.endswith('b')])
 
+        # Get a list of all names of weights and biases in the decoder part of the loss function:
         graph_weight_name_list = [name for name in var_name_list if 'biases' not in name]
         graph_biases_name_list = [name for name in var_name_list if 'biases' in name]
         
+        # We are using a subset of the weights and biases that came with vgg16:
         assert len(graph_weight_name_list) <= len(input_weight_name_list)
         assert len(graph_biases_name_list) <= len(input_biases_name_list)
         
+        # With the above sorting, the elements of 'graph_weight_name_list' and
+        # 'input_weight_name_list' are ordered to match each other:
         for i in range(len(graph_weight_name_list)):
             
-            inputs_name = input_weight_name_list[i]
-            target_name = graph_weight_name_list[i]
+            inputs_name = input_weight_name_list[i] # Contains value to be assigned.
+            target_name = graph_weight_name_list[i] # Contains weight name to be assigned value.
             
+            # Make the value assignment to each weight in the perceptual loss subnetwork:
             with tf.variable_scope('', reuse = True):
                 inputs = weight_dict[inputs_name]
                 target = tf.get_variable(target_name, dtype = tf.float32)
                 self.sess.run(tf.assign(target, inputs))
 
+        # With the above sorting, the elements of 'graph_biases_name_list' and
+        # 'input_biases_name_list' are ordered to match each other:
         for i in range(len(graph_biases_name_list)):
             
-            inputs_name = input_biases_name_list[i]
-            target_name = graph_biases_name_list[i]
+            inputs_name = input_biases_name_list[i] # Contains value to be assigned.
+            target_name = graph_biases_name_list[i] # Contains bias name to be assigned value.
             
+            # Make the value assignment to each bias in the perceptual loss subnetwork:
             with tf.variable_scope('', reuse = True):
                 inputs = weight_dict[inputs_name]
                 target = tf.get_variable(target_name, dtype = tf.float32)
@@ -1514,11 +1821,14 @@ class VariationalAutoencoder(object):
 
         '''
         
-        Description: Strip large constant values from 'graph_def'.
+        Description: strip large constant values from 'graph_def'. Borrowed from
+        "https://stackoverflow.com/questions/38189119/simple-way-to-visualize-a-tensorflow-graph-in-jupyter".
 
         Inputs:
+            -'max_const_size': threshold size.
 
-        Output:
+        Return:
+            -'strip_def'...
 
         '''
         
@@ -1544,12 +1854,14 @@ class VariationalAutoencoder(object):
 
         '''
         
-        Description: Borrowed from
-        https://stackoverflow.com/questions/38189119/simple-way-to-visualize-a-tensorflow-graph-in-jupyter
+        Description: display 'self.graph' in a Jupyter notebook via tensorboard. Borrowed from
+        "https://stackoverflow.com/questions/38189119/simple-way-to-visualize-a-tensorflow-graph-in-jupyter".
 
         Inputs:
+            -'max_const_size': threshold size, for use in '_strip_consts'.
 
-        Output:
+        Return:
+            -None
 
         '''
 

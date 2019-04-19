@@ -2,3 +2,15 @@
 .ipynb_checkpoints/
 *models*
 __pycache__
+*cifar_10*
+*coco*
+celeb_data_tfrecord
+celebA_15000_details.pkl
+celebA_15000.pkl
+safe
+img_align_celeba
+list_attr_celeba.txt
+vgg16_weights.npz
+sbavon
+vae-celebA
+scratch.ipynb
