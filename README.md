@@ -6,6 +6,7 @@ A tensorflow implementation of a variational autoencoder.
 2. PIL
 3. matplotlib
 4. IPython.display (for tensorboard visualization in a jupyter notebook)
+5. OpenCV (for face cropping)
 
 ## Usage:
 Run the enclosed `vae_mnist.ipynb` notebook in a tensorflow environment.
