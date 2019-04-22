@@ -112,6 +112,7 @@ def find_face(image):
     '''
     
     # NOTE: you may need to change this path name depending on your cv2 installation:
+    assert os.path.exists(const.PATH_FACEDATA)
     cascade = cv2.CascadeClassifier(const.PATH_FACEDATA)
     
     # Padding for the frame of the found face.

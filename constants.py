@@ -13,7 +13,6 @@ DIR_SAVED_MODEL = 'saved_model'
 PATH_ROOT = os.getcwd()
 # NOTE: you may need to change this path name depending on your cv2 installation:
 PATH_FACEDATA = "/anaconda/lib/python3.6/site-packages/cv2/data/haarcascade_frontalface_default.xml"
-assert os.path.exists(PATH_FACEDATA)
 
 # Lists:
 LIST_TRAIN_TESTA_TESTB_KEYS = ['train', 'testa', 'testb']
